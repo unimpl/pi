@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192.208 594.3" width="192.208" height="594.3" style="--bg:#f0f1e9;--fg:#24392e;--line:#758570;--accent:#285e4c;--muted:#59645e;--surface:#e6eadd;--border:#9ead97;background:var(--bg)">
+<style>
+  text { font-family: 'PingFang SC', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="A" data-to="B" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="96.104,60.900000000000006 96.104,108.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="B" data-to="C" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="96.104,145.8 96.104,193.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="C" data-to="D" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="96.104,230.70000000000002 96.104,278.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="D" data-to="E" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="96.104,315.6 96.104,363.6" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="E" data-to="F" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="96.104,400.5 96.104,448.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="F" data-to="G" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="96.104,485.4 96.104,533.4" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="node" data-id="A" data-label="AgentMessage" data-shape="rectangle">
+  <rect x="30.298500000000004" y="24" width="131.611" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="96.104" y="42.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">AgentMessage</text>
+</g>
+<g class="node" data-id="B" data-label="transformContext" data-shape="rectangle">
+  <rect x="24.741" y="108.9" width="142.726" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="96.104" y="127.35000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">transformContext</text>
+</g>
+<g class="node" data-id="C" data-label="convertToLlm" data-shape="rectangle">
+  <rect x="33.633" y="193.8" width="124.942" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="96.104" y="212.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">convertToLlm</text>
+</g>
+<g class="node" data-id="D" data-label="normalizeContext" data-shape="rectangle">
+  <rect x="24" y="278.70000000000005" width="144.208" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="96.104" y="297.15000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">normalizeContext</text>
+</g>
+<g class="node" data-id="E" data-label="streamFn" data-shape="rectangle">
+  <rect x="46.971" y="363.6" width="98.266" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="96.104" y="382.05" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">streamFn</text>
+</g>
+<g class="node" data-id="F" data-label="API 适配" data-shape="rectangle">
+  <rect x="48.823499999999996" y="448.5" width="94.561" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="96.104" y="466.95" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">API 适配</text>
+</g>
+<g class="node" data-id="G" data-label="统一响应事件" data-shape="rectangle">
+  <rect x="30.668999999999997" y="533.4" width="130.87" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="96.104" y="551.85" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">统一响应事件</text>
+</g>
+</svg>

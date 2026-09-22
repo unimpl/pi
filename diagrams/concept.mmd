@@ -1,0 +1,15 @@
+flowchart TD
+P[启动 Pi CLI] --> RT[AgentSessionRuntime 当前槽位]
+RT -->|当前 1 个，可替换| AS[AgentSession 应用协调层]
+AS -->|持有 1 个| A[Agent 执行内核]
+AS -->|持有 1 个| SM[SessionManager 持久会话树]
+A --> ST[AgentState 模型、工具与消息]
+U[空闲时发送 user message] -->|prompt| R[一次 Run]
+A --> R
+R --> T1[Turn 1：assistant 响应]
+T1 --> C[toolCall]
+C --> AT[AgentTool.execute]
+AT --> TR[toolResult]
+TR --> T2[Turn 2：assistant 响应]
+T2 --> E[Run 结算并回到空闲]
+R -.产生的消息与状态变化.-> SM

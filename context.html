@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="通过源码、图解与设计取舍理解 Pi Agent。面向有 Go、Rust、C++ 经验的开发者。"><title>记住历史，不等于发送全部历史 · Pi 设计读本</title><link rel="icon" href="assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="assets/book.css"><script src="assets/search-index.js" defer></script><script src="assets/book.js" defer></script></head>
+<body data-page="context"><a class="skip" href="#main">跳到正文</a><header class="topbar"><a class="brand" href="index.html"><span class="brand-mark">π</span>Pi 设计读本</a><span class="top-caption">从代码，读懂设计。</span><a class="search-link" href="search.html">搜索全书</a><button class="menu-toggle js-only" type="button" aria-expanded="false" aria-controls="chapter-nav">目录</button></header>
+<div class="book-layout"><aside class="sidebar" id="chapter-nav"><nav aria-label="章节"><a class="overview-link" href="index.html">阅读指南</a><a href="foundations.html" ><span>01</span>先认识 Pi 的核心对象</a><a href="architecture.html" ><span>02</span>沿着职责，而非目录理解架构</a><a href="journey.html" ><span>03</span>一次请求，究竟经过了什么</a><a href="control.html" ><span>04</span>控制权必须留在运行时</a><a href="models.html" ><span>05</span>统一模型接口，但保留差异</a><a href="tools.html" ><span>06</span>工具是能力，也是边界</a><a href="context.html" aria-current=page><span>07</span>记住历史，不等于发送全部历史</a><a href="infrastructure.html" ><span>08</span>从本地助手走向可组合系统</a><a href="principles.html" ><span>09</span>把实现读成设计判断</a><a href="reference.html">术语与阅读路线</a><a href="evidence.html">证据与版本说明</a></nav></aside>
+<main id="main" tabindex="-1"><div class="chapter-meta">第 07 章 / 核心</div><h1>记住历史，不等于发送全部历史</h1><p class="subtitle">会话是记录，上下文是投影，运行状态是此刻。</p><p class="lead">长任务的难点并非把 messages 数组保存下来，而是决定下一次请求应看到哪些信息。pi 将持久记录与模型输入区分开，使会话可以保留历史，同时控制上下文规模。</p><section class="chapter-guide" aria-labelledby="design-lens"><div class="guide-heading"><h2 id="design-lens">本章先抓什么</h2><span>必须掌握</span></div><dl><div><dt>为什么需要</dt><dd>完整历史会持续增长，而模型窗口有限。若把记录和请求混为一谈，压缩会破坏审计，或请求迟早超过预算。</dd></div><div><dt>行业常见做法</dt><dd>常见策略包括完整历史、滑动窗口、摘要、检索和服务端会话。成熟系统通常把权威记录与本次模型投影分开。</dd></div><div><dt>自己实现时</dt><dd>保存可审计记录，为每次请求构建投影；保证 tool call 与 result 成对。先做可测的截断与预算，再考虑检索和长期记忆。</dd></div><div><dt>现在可以忽略</dt><dd>向量数据库和“无限记忆”叙事。没有明确检索目标、质量评估和隐私边界时，它们只会增加不确定性。</dd></div></dl></section><figure class="diagram"><div class="diagram-head"><span>压缩改变模型视野，不删除历史</span></div><img src="diagrams/context.svg" alt="会话记录保留完整路径；压缩前发送较长历史，压缩后发送摘要与近期消息，工具调用和结果仍保持配对。" loading="lazy"><figcaption>会话记录保留完整路径；压缩前发送较长历史，压缩后发送摘要与近期消息，工具调用和结果仍保持配对。</figcaption></figure><section class="prose-section" aria-labelledby="three"><h2 id="three">三个容易混淆的对象</h2><table><thead><tr><th>对象</th><th>回答的问题</th><th>例子</th></tr></thead><tbody><tr><td>会话记录</td><td>曾经发生过什么？</td><td>消息、模型变更、压缩记录、分支摘要</td></tr><tr><td>模型上下文</td><td>下一次请求交给模型什么？</td><td>规则、摘要、近期消息与工具结果</td></tr><tr><td>运行状态</td><td>现在正在做什么？</td><td>isStreaming、部分响应、pendingToolCalls</td></tr></tbody></table><p>例如 UI 正在显示的半句响应属于运行中的部分消息；一次压缩后，磁盘里仍可保留旧消息，但下一次模型请求只包含摘要和保留部分。将它们当成同一个数组，会使恢复、展示和预算管理互相牵制。</p></section><section class="prose-section" aria-labelledby="storage"><h2 id="storage">session 文件保存的不是 AgentSession</h2><p><strong>问题：</strong><code>AgentSession</code> 包含工具实现、事件监听器、取消控制器和正在执行的 Promise，不能可靠地直接序列化。Pi 因此不保存这个对象，而是让 <code>SessionManager</code> 保存足以恢复工作的记录。</p><p>默认路径是 <code>~/.pi/agent/sessions/--&lt;编码后的工作目录&gt;--/&lt;时间&gt;_&lt;session-id&gt;.jsonl</code>。JSONL 表示“一行一个 JSON 对象”：第一行是 header，记录版本、session ID、创建时间、cwd 和可选的父 session 文件；其余行是追加的 entry。</p><pre><code>{"type":"session","version":3,"id":"...","cwd":"/project"}
+{"type":"message","id":"a1","parentId":null,"message":{"role":"user","content":"..."}}
+{"type":"message","id":"b2","parentId":"a1","message":{"role":"assistant","content":[...]}}
+{"type":"model_change","id":"c3","parentId":"b2","provider":"...","modelId":"..."}</code></pre><p>Pi 当前保存 message、模型与 thinking level 变化、压缩摘要、分支摘要、标签、会话名称和扩展数据。assistant 消息中还可能包含 toolCall、usage 和终止原因；toolResult 保存调用 ID、输出与错误状态。每个 entry 的 <code>id + parentId</code> 形成树，文件最后追加的 entry 通常是恢复时的活动 leaf。</p><p>它不保存可执行的工具函数、监听器、网络连接、AbortController 或流式中的 <code>pending</code> assistant 消息。恢复过程是：读取 JSONL 并迁移旧版本 → 建立 ID 索引 → 从 leaf 沿 parentId 选出当前分支 → 应用最近的压缩记录 → 得到 messages、model 与 thinking level → 创建新的 Agent 和 AgentSession。新会话还会延迟到出现第一条完整 assistant 消息后才真正创建文件，避免只留下未完成的空会话。</p><aside class="note"><strong>与 Codex 对比（2026-09-20）：</strong>OpenAI 官方文档确认 Codex 将本地状态放在 <code>CODEX_HOME</code>（默认 <code>~/.codex</code>），session transcript 位于 <code>$CODEX_HOME/sessions</code>，归档位于 <code>archived_sessions</code>；可配置的本地历史还涉及 <code>history.jsonl</code>。本机当前实现可观察到按年月日组织的每 session JSONL，按顺序记录 <code>session_meta</code>、<code>turn_context</code>、<code>response_item</code>、<code>event_msg</code>、<code>compacted</code> 和 token usage 等事件。后者是实现观察，不是稳定公开格式。</aside><p>两者都选择追加事件而不是序列化整个运行对象，但关注点不同：Pi 的公开 session 格式用 <code>parentId</code> 直接表达对话分支；当前 Codex 记录更像带 ordinal 的执行轨迹，包含每 turn 的环境、权限、模型响应项和用量。实现自己的 harness 时，先保存可恢复的语义事件和外部副作用结果；不要从第一天复制某个产品的全部诊断字段。</p><p class="source-note">Codex 位置依据：OpenAI 官方文档《Troubleshooting》和《Advanced Configuration》（2026-09-20 核对）。Pi 格式依据本仓库 <code>session-manager.ts</code> 与 <code>docs/session-format.md</code>。</p></section><section class="prose-section" aria-labelledby="tree"><h2 id="tree">会话树表达探索历史</h2><p class="documented">项目文档：当前 coding-agent 会话以 JSONL 保存，条目通过 id 与 parentId 形成树，当前位置用 leaf 表达。JSONL 是逐行 JSON 的存储格式；树是条目之间的逻辑关系，两者并不冲突。</p><p>从一个早期问题尝试两条解决路线时，线性聊天必须复制或删除历史，树可以保留共同祖先并切换路径。模型上下文由所选路径构建，不会自动混合所有分支。离开分支时的摘要可以把有用进展带回新路径，但它不等于把两个程序状态自动合并。</p><p>这里也不是 Git 工作树：切换会话分支不意味着磁盘文件同步回到旧版本。对 C++/Rust 工程师，这是最值得防止的误解。</p></section><section class="prose-section" aria-labelledby="compact"><h2 id="compact">压缩的基本步骤</h2><p>shouldCompact 比较 contextTokens 与 contextWindow − reserveTokens，为后续生成保留空间。prepareCompaction 找到保留边界，收集需要摘要的旧消息；compact 生成结构化摘要；产品层保存压缩条目并重建上下文。</p><p>切点不能任意落在 toolResult 前面，否则模型会收到没有对应调用的结果。源码选择用户类消息或 assistant 消息作为有效切点；若在 assistant 工具调用前切开，它后面的结果一起保留。遇到一个特别长的用户轮次，还会单独摘要被切掉的轮次前缀。</p><p>前次摘要也参与后续压缩；文件操作信息会累计。这里的目标不是无损压缩，而是保留继续任务所需的目标、约束、进展和关键决定。摘要依然由模型生成，可能遗漏重要内容。</p></section><section class="prose-section" aria-labelledby="failure"><h2 id="failure">预算与失败也属于摘要设计</h2><p>estimateContextTokens 尽量使用最后一次有效 usage，再估算其后的消息；没有有效 usage 时估算全部消息。字符数除以四等规则是启发式，不是实际 tokenizer。特别对不同语言和多模态输入，不能把它当作精确计量保证。</p><p>摘要响应达到 length 时 getSummarizationFailure 会拒绝把不完整内容当作检查点；摘要如果试图调用工具，也会被拒绝。为什么如此保守？原始任务可以在工具错误后继续尝试，但错误摘要一旦成为后续上下文，会持续污染之后的推理。</p><p>源码将选切点、组织摘要输入、模型调用和存储职责分开。文件顶部虽称 pure functions，摘要函数实际上会调用模型；应按函数逐个判断副作用，不照单全收标题。</p></section><section class="prose-section" aria-labelledby="cost"><h2 id="cost">用可恢复记录换取有限的模型视野</h2><p class="analysis">分析推断：保留完整会话并为模型构建投影，使人类审计与模型预算不必使用同一种表示。代价是多了一套重建规则，摘要有成本和信息损失，压缩后的模型也无法“凭空回忆”未被保留的细节。</p><p>上下文工程在这里不是神秘技巧，而是信息选择与一致性工程：哪些数据保留、何时变换、调用和结果怎样保持配对、失败后从哪里恢复。先理解这四件事，再讨论更复杂的长期记忆或检索系统。</p></section><section class="prose-section self-check" aria-labelledby="self-check"><h2 id="self-check">本章自测</h2><p>先尝试独立回答，再展开参考答案。</p><ol class="question-list"><li>会话记录、模型上下文和运行状态分别是什么？</li><li>Pi 为什么保存 session JSONL，而不是序列化 AgentSession？</li><li>JSONL 是线性文件，为什么仍能表示会话树？</li><li>压缩后，旧消息是否从 session 中消失？</li><li>为什么压缩切点不能让 toolResult 与 toolCall 分离？</li></ol><details class="reference-answer"><summary>查看参考答案</summary><ol><li><strong>会话记录、模型上下文和运行状态分别是什么？</strong> 会话记录是可审计的历史事实；模型上下文是本次请求从记录构建的有限投影；运行状态是此刻的流式消息、pendingToolCalls 和取消状态。</li><li><strong>Pi 为什么保存 session JSONL，而不是序列化 AgentSession？</strong> AgentSession 含函数、监听器、连接和取消控制器，不能作为稳定数据保存。JSONL 只记录可恢复事实，重启后由 SessionManager 构建上下文，再创建新的 Agent 与 AgentSession。</li><li><strong>JSONL 是线性文件，为什么仍能表示会话树？</strong> 物理上每行顺序追加；逻辑上每个 entry 用 id 和 parentId 指向父节点。leaf 选择当前路径，分支只需从旧节点追加新的子节点。</li><li><strong>压缩后，旧消息是否从 session 中消失？</strong> 不会。压缩追加 summary 与保留边界，模型上下文改用摘要和近期消息；完整 session 记录仍可保留旧条目用于审计和其他分支。</li><li><strong>为什么压缩切点不能让 toolResult 与 toolCall 分离？</strong> 模型协议要求结果能关联先前调用。单独保留 toolResult 会产生孤儿结果并破坏上下文一致性，因此切点必须保持调用与结果的有效组合。</li></ol></details></section><section><h2 id="evidence">源码证据</h2><p class="muted">摘录来自本地代码快照。点开可核对原文和完整文件；项目文档与分析推断在正文单独标注。</p><details class="evidence"><summary>session 文件的 header 与条目类型，证明文件不是 AgentSession 对象快照。</summary><p class="source-path">packages/coding-agent/src/core/session-manager.ts · L39</p><pre><code>  39  export interface SessionHeader {
+  40  	type: &quot;session&quot;;
+  41  	version?: number; // v1 sessions don&#x27;t have this
+  42  	id: string;
+  43  	timestamp: string;
+  44  	cwd: string;
+  45  	parentSession?: string;
+  46  }
+  47  
+  48  export interface NewSessionOptions {
+  49  	id?: string;
+  50  	parentSession?: string;
+  51  }
+  52  
+  53  export interface SessionEntryBase {
+  54  	type: string;
+  55  	id: string;
+  56  	parentId: string | null;</code></pre><a href="sources/packages--coding-agent--src--core--session-manager.ts.html#L39">查看本地源码快照与行号</a></details><details class="evidence"><summary>SessionManager 用追加日志和 parentId 树管理持久记录。</summary><p class="source-path">packages/coding-agent/src/core/session-manager.ts · L857</p><pre><code> 857   * Manages conversation sessions as append-only trees stored in JSONL files.
+ 858   *
+ 859   * Each session entry has an id and parentId forming a tree structure. The &quot;leaf&quot;
+ 860   * pointer tracks the current position. Appending creates a child of the current leaf.
+ 861   * Branching moves the leaf to an earlier entry, allowing new branches without
+ 862   * modifying history.
+ 863   *
+ 864   * Use buildSessionContext() to get the resolved message list for the LLM, which
+ 865   * handles compaction summaries and follows the path from root to current leaf.
+ 866   */
+ 867  export class SessionManager {
+ 868  	private sessionId: string = &quot;&quot;;
+ 869  	private sessionFile: string | undefined;
+ 870  	private sessionDir: string;
+ 871  	private cwd: string;
+ 872  	private persist: boolean;</code></pre><a href="sources/packages--coding-agent--src--core--session-manager.ts.html#L857">查看本地源码快照与行号</a></details><details class="evidence"><summary>恢复时先从记录构建上下文，再创建 Agent 与 AgentSession。</summary><p class="source-path">packages/coding-agent/src/core/sdk.ts · L192</p><pre><code> 192  	const existingSession = sessionManager.buildSessionContext();
+ 193  	const hasExistingSession = existingSession.messages.length &gt; 0;
+ 194  	const hasThinkingEntry = sessionManager.getBranch().some((entry) =&gt; entry.type === &quot;thinking_level_change&quot;);
+ 195  
+ 196  	let model = options.model;
+ 197  	let modelFallbackMessage: string | undefined;
+ 198  
+ 199  	// If session has data, try to restore model from it
+ 200  	if (!model &amp;&amp; hasExistingSession &amp;&amp; existingSession.model) {
+ 201  		const restoredModel = modelRuntime.getModel(existingSession.model.provider, existingSession.model.modelId);
+ 202  		if (restoredModel &amp;&amp; modelRuntime.hasConfiguredAuth(restoredModel.provider)) {
+ 203  			model = restoredModel;
+ 204  		}
+ 205  		if (!model) {
+ 206  			modelFallbackMessage = `Could not restore model ${existingSession.model.provider}/${existingSession.model.modelId}`;
+ 207  		}
+ 208  	}
+ 209  
+ 210  	// If still no model, use findInitialModel (checks settings default, then provider defaults)
+ 211  	if (!model) {</code></pre><a href="sources/packages--coding-agent--src--core--sdk.ts.html#L192">查看本地源码快照与行号</a></details><details class="evidence"><summary>压缩触发阈值。</summary><p class="source-path">packages/coding-agent/src/core/compaction/compaction.ts · L250</p><pre><code> 250  export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
+ 251  	if (!settings.enabled) return false;
+ 252  	return contextTokens &gt; contextWindow - settings.reserveTokens;
+ 253  }</code></pre><a href="sources/packages--coding-agent--src--core--compaction--compaction.ts.html#L250">查看本地源码快照与行号</a></details><details class="evidence"><summary>不能在工具结果处单独切开。</summary><p class="source-path">packages/coding-agent/src/core/compaction/compaction.ts · L323</p><pre><code> 323  function isCutPointMessage(message: AgentMessage): boolean {
+ 324  	switch (message.role) {
+ 325  		case &quot;user&quot;:
+ 326  		case &quot;assistant&quot;:
+ 327  		case &quot;bashExecution&quot;:
+ 328  		case &quot;custom&quot;:
+ 329  		case &quot;branchSummary&quot;:
+ 330  		case &quot;compactionSummary&quot;:
+ 331  			return true;
+ 332  		case &quot;toolResult&quot;:
+ 333  			return false;
+ 334  	}
+ 335  	return false;
+ 336  }
+ 337  
+ 338  function isTurnStartMessage(message: AgentMessage): boolean {
+ 339  	switch (message.role) {</code></pre><a href="sources/packages--coding-agent--src--core--compaction--compaction.ts.html#L323">查看本地源码快照与行号</a></details><details class="evidence"><summary>输出达到上限时拒绝不完整摘要。</summary><p class="source-path">packages/coding-agent/src/core/compaction/compaction.ts · L557</p><pre><code> 557  export function getSummarizationFailure(response: AssistantMessage, label: string): string | undefined {
+ 558  	if (response.stopReason === &quot;error&quot;) {
+ 559  		return `${label} failed: ${response.errorMessage || &quot;Unknown error&quot;}`;
+ 560  	}
+ 561  	if (response.stopReason === &quot;length&quot;) {
+ 562  		return `${label} failed: generation hit the token cap and the summary is incomplete`;
+ 563  	}
+ 564  	return undefined;
+ 565  }</code></pre><a href="sources/packages--coding-agent--src--core--compaction--compaction.ts.html#L557">查看本地源码快照与行号</a></details><details class="evidence"><summary>应用摘要转换成模型可消费消息。</summary><p class="source-path">packages/coding-agent/src/core/messages.ts · L176</p><pre><code> 176  				case &quot;compactionSummary&quot;:
+ 177  					return {
+ 178  						role: &quot;user&quot;,
+ 179  						content: [
+ 180  							{ type: &quot;text&quot; as const, text: COMPACTION_SUMMARY_PREFIX + m.summary + COMPACTION_SUMMARY_SUFFIX },
+ 181  						],
+ 182  						timestamp: m.timestamp,
+ 183  					};
+ 184  				case &quot;system&quot;:
+ 185  				case &quot;user&quot;:</code></pre><a href="sources/packages--coding-agent--src--core--messages.ts.html#L176">查看本地源码快照与行号</a></details><details class="evidence"><summary>当前公开文档定义路径、版本和 JSONL 条目格式。</summary><p class="source-path">packages/coding-agent/docs/session-format.md · L3</p><pre><code>   3  Sessions are stored as JSONL (JSON Lines) files. Each line is a JSON object with a `type` field. Session entries form a tree structure via `id`/`parentId` fields, enabling in-place branching without creating new files.
+   4  
+   5  ## File Location
+   6  
+   7  ```
+   8  ~/.pi/agent/sessions/--&lt;path&gt;--/&lt;timestamp&gt;_&lt;session-id&gt;.jsonl
+   9  ```
+  10  </code></pre><a href="sources/packages--coding-agent--docs--session-format.md.html#L3">查看本地源码快照与行号</a></details></section><nav class="chapter-pager" aria-label="上下章"><a href="tools.html">上一页<br><strong>工具是能力，也是边界</strong></a><a href="infrastructure.html">下一页<br><strong>从本地助手走向可组合系统</strong></a></nav><footer class="page-footer">Pi 设计读本 · 本地源码研究<br>代码基线 <code>36b60d2e8985</code> · 2026-09-23<br><a href="evidence.html">证据规则与分析边界</a></footer></main><aside class="page-toc" aria-label="本页目录"><span>本页内容</span><a href="#design-lens">本章重点</a><a href="#three">三个容易混淆的对象</a><a href="#storage">session 文件保存的不是 AgentSession</a><a href="#tree">会话树表达探索历史</a><a href="#compact">压缩的基本步骤</a><a href="#failure">预算与失败也属于摘要设计</a><a href="#cost">用可恢复记录换取有限的模型视野</a><a href="#self-check">本章自测</a><a href="#evidence">源码证据</a><a href="#main">回到顶部</a></aside></div><noscript><p class="noscript-note">JavaScript 已关闭：正文、源码、图表和章节导航仍可阅读；全文搜索需要 JavaScript。</p></noscript></body></html>

@@ -1,0 +1,79 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>packages/server/README.md · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>packages/server/README.md</h1><p>本地快照 · 36b60d2e8985 · 2026-09-23</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> # @earendil-works/pi-server</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a> </span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a> Experimental local server for the new durable Session and Agent Harness interfaces.</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a> </span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a> The current slice supports server- and Session-scoped facet-service routing and multi-presentation attachment. `RoutedServerServiceHost.attachClient()` creates one connection-scoped server service endpoint with narrow attachment-management capabilities. `RoutedSessionHandle.attachClient()` returns a presentation-scoped Session capability. Its `invokeService()` forwards an opaque service/member envelope to the selected Session endpoint; the server validates the attachment route but does not load the facet contract.</span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a> </span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a> - server service calls and subscriptions route opaquely through the connection&#x27;s `RoutedServerServiceAttachment`;</span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a> - the application-owned `SessionDirectory` projects the private catalog into replicated presentation-safe state;</span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a> - the application-owned `SessionManagement` creates, removes, attaches, and detaches Sessions without exposing route IDs in business results;</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a> - attachment changes are published out of band after the router installs or clears the live route;</span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a> - Session service calls route through `invokeService` without server-side business-payload decoding;</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a> - service subscription updates remain scoped to the requesting attachment;</span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a> - application observations such as transcripts route as ordinary service state without server-owned business schemas.</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a> </span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a> A Session may have multiple presentation attachments. Repeating `attach` from one connection is idempotent; every successful attachment has a server-generated `attachmentId` delivered only as routing control data. Session requests carry `{ serverId, sessionId, attachmentId }`, and the server rejects stale or mismatched routes. Losing a connection rejects its local responses but releases its attachment only after admitted service calls settle. The host decides when zero presentation demand and worker-local Harness activity permit worker retirement. Server shutdown closes every routed Session handle, releasing its worker and Session writer ownership.</span>
+<span id="L16"><a href="#L16" aria-label="第 16 行">  16</a> </span>
+<span id="L17"><a href="#L17" aria-label="第 17 行">  17</a> ```ts</span>
+<span id="L18"><a href="#L18" aria-label="第 18 行">  18</a> import { randomUUID } from &quot;node:crypto&quot;;</span>
+<span id="L19"><a href="#L19" aria-label="第 19 行">  19</a> import { MemorySessionRepo, type Session } from &quot;@earendil-works/pi-agent-core&quot;;</span>
+<span id="L20"><a href="#L20" aria-label="第 20 行">  20</a> import {</span>
+<span id="L21"><a href="#L21" aria-label="第 21 行">  21</a>   type RoutedServerServiceHost,</span>
+<span id="L22"><a href="#L22" aria-label="第 22 行">  22</a>   type RoutedSessionHandle,</span>
+<span id="L23"><a href="#L23" aria-label="第 23 行">  23</a>   type ServerHost,</span>
+<span id="L24"><a href="#L24" aria-label="第 24 行">  24</a>   SessionAmbiguousError,</span>
+<span id="L25"><a href="#L25" aria-label="第 25 行">  25</a>   SessionNotFoundError,</span>
+<span id="L26"><a href="#L26" aria-label="第 26 行">  26</a> } from &quot;@earendil-works/pi-server&quot;;</span>
+<span id="L27"><a href="#L27" aria-label="第 27 行">  27</a> import { createUnixServer, getUnixSocketPath } from &quot;@earendil-works/pi-server/unix&quot;;</span>
+<span id="L28"><a href="#L28" aria-label="第 28 行">  28</a> </span>
+<span id="L29"><a href="#L29" aria-label="第 29 行">  29</a> async function startServer(</span>
+<span id="L30"><a href="#L30" aria-label="第 30 行">  30</a>   serverServices: RoutedServerServiceHost,</span>
+<span id="L31"><a href="#L31" aria-label="第 31 行">  31</a>   openRoutedSession: (session: Session) =&gt; Promise&lt;RoutedSessionHandle&gt;,</span>
+<span id="L32"><a href="#L32" aria-label="第 32 行">  32</a> ) {</span>
+<span id="L33"><a href="#L33" aria-label="第 33 行">  33</a>   const sessions = new MemorySessionRepo();</span>
+<span id="L34"><a href="#L34" aria-label="第 34 行">  34</a>   const host: ServerHost = {</span>
+<span id="L35"><a href="#L35" aria-label="第 35 行">  35</a>     serverServices,</span>
+<span id="L36"><a href="#L36" aria-label="第 36 行">  36</a>     async resolveSession(sessionId, context) {</span>
+<span id="L37"><a href="#L37" aria-label="第 37 行">  37</a>       const matches = (await sessions.list(undefined, context))</span>
+<span id="L38"><a href="#L38" aria-label="第 38 行">  38</a>         .filter((metadata) =&gt; metadata.id === sessionId);</span>
+<span id="L39"><a href="#L39" aria-label="第 39 行">  39</a>       if (matches.length === 0) {</span>
+<span id="L40"><a href="#L40" aria-label="第 40 行">  40</a>         throw new SessionNotFoundError(`Unknown session: ${sessionId}`);</span>
+<span id="L41"><a href="#L41" aria-label="第 41 行">  41</a>       }</span>
+<span id="L42"><a href="#L42" aria-label="第 42 行">  42</a>       if (matches.length &gt; 1) throw new SessionAmbiguousError();</span>
+<span id="L43"><a href="#L43" aria-label="第 43 行">  43</a>       return matches[0];</span>
+<span id="L44"><a href="#L44" aria-label="第 44 行">  44</a>     },</span>
+<span id="L45"><a href="#L45" aria-label="第 45 行">  45</a>     async openSession(metadata, context) {</span>
+<span id="L46"><a href="#L46" aria-label="第 46 行">  46</a>       const session = await sessions.open(metadata, context);</span>
+<span id="L47"><a href="#L47" aria-label="第 47 行">  47</a>       try {</span>
+<span id="L48"><a href="#L48" aria-label="第 48 行">  48</a>         return await openRoutedSession(session);</span>
+<span id="L49"><a href="#L49" aria-label="第 49 行">  49</a>       } catch (error) {</span>
+<span id="L50"><a href="#L50" aria-label="第 50 行">  50</a>         try {</span>
+<span id="L51"><a href="#L51" aria-label="第 51 行">  51</a>           await session.close(context);</span>
+<span id="L52"><a href="#L52" aria-label="第 52 行">  52</a>         } catch (cleanupError) {</span>
+<span id="L53"><a href="#L53" aria-label="第 53 行">  53</a>           throw new AggregateError(</span>
+<span id="L54"><a href="#L54" aria-label="第 54 行">  54</a>             [error, cleanupError],</span>
+<span id="L55"><a href="#L55" aria-label="第 55 行">  55</a>             &quot;Harness creation and Session cleanup failed&quot;,</span>
+<span id="L56"><a href="#L56" aria-label="第 56 行">  56</a>           );</span>
+<span id="L57"><a href="#L57" aria-label="第 57 行">  57</a>         }</span>
+<span id="L58"><a href="#L58" aria-label="第 58 行">  58</a>         throw error;</span>
+<span id="L59"><a href="#L59" aria-label="第 59 行">  59</a>       }</span>
+<span id="L60"><a href="#L60" aria-label="第 60 行">  60</a>     },</span>
+<span id="L61"><a href="#L61" aria-label="第 61 行">  61</a>   };</span>
+<span id="L62"><a href="#L62" aria-label="第 62 行">  62</a> </span>
+<span id="L63"><a href="#L63" aria-label="第 63 行">  63</a>   const serverId = randomUUID();</span>
+<span id="L64"><a href="#L64" aria-label="第 64 行">  64</a>   const server = createUnixServer(host, {</span>
+<span id="L65"><a href="#L65" aria-label="第 65 行">  65</a>     serverId,</span>
+<span id="L66"><a href="#L66" aria-label="第 66 行">  66</a>     path: getUnixSocketPath(serverId, &quot;/run/user/1000/pi&quot;),</span>
+<span id="L67"><a href="#L67" aria-label="第 67 行">  67</a>   });</span>
+<span id="L68"><a href="#L68" aria-label="第 68 行">  68</a>   await server.start();</span>
+<span id="L69"><a href="#L69" aria-label="第 69 行">  69</a>   return server;</span>
+<span id="L70"><a href="#L70" aria-label="第 70 行">  70</a> }</span>
+<span id="L71"><a href="#L71" aria-label="第 71 行">  71</a> ```</span>
+<span id="L72"><a href="#L72" aria-label="第 72 行">  72</a> </span>
+<span id="L73"><a href="#L73" aria-label="第 73 行">  73</a> Applications supply a required server service host, a bounded Session resolver, and a routed Session factory. Session discovery and management are application-owned services; the protocol server only asks the resolver for metadata when routing an attachment. The host owns acquiring the worker-local Session and Harness. Failures are cleaned up in that worker. Neither an open JavaScript Session nor a Harness crosses the process boundary.</span>
+<span id="L74"><a href="#L74" aria-label="第 74 行">  74</a> </span>
+<span id="L75"><a href="#L75" aria-label="第 75 行">  75</a> `serverId` is a logical identity supplied by the launcher, not a socket address. The Unix preset requires an explicit physical `path`; `getUnixSocketPath()` derives one from a caller-selected directory. Choose a short, private runtime directory rather than deriving the route from an unbounded home-directory path. A long-lived launcher can reuse the same ID and path when replacing a server process.</span>
+<span id="L76"><a href="#L76" aria-label="第 76 行">  76</a> </span>
+<span id="L77"><a href="#L77" aria-label="第 77 行">  77</a> `Server` composes transports through `ServerListener`; peer authentication remains application policy and is not implemented by the experimental Unix transport. The Unix submodule provides `createUnixListener()` and `createUnixServer()`. Low-level routed-envelope validation, CBOR, and framing come from `@earendil-works/pi-protocol`; Chord owns service-control parsing, error codes, snapshots and updates, and each subscription&#x27;s replicated-state encoder.</span>
+<span id="L78"><a href="#L78" aria-label="第 78 行">  78</a> </span>
+<span id="L79"><a href="#L79" aria-label="第 79 行">  79</a> Server and worker lifecycle is managed outside the public Pi protocol. The replaceable application server converts connection attachments into private demand updates; the worker combines generation-tagged demand with authoritative Harness activity. The experimental coordinator only supplies stable routing and reports generic server-generation connection changes.</span></code></pre></body></html>

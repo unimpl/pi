@@ -1,0 +1,75 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>package.json · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>package.json</h1><p>本地快照 · 36b60d2e8985 · 2026-09-23</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> {</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a> 	&quot;name&quot;: &quot;pi-monorepo&quot;,</span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a> 	&quot;private&quot;: true,</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a> 	&quot;type&quot;: &quot;module&quot;,</span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a> 	&quot;workspaces&quot;: [</span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a> 		&quot;packages/*&quot;,</span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a> 		&quot;packages/session-backends/*&quot;,</span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a> 		&quot;packages/coding-agent/examples/extensions/with-deps&quot;,</span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a> 		&quot;packages/coding-agent/examples/extensions/custom-provider-anthropic&quot;,</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a> 		&quot;packages/coding-agent/examples/extensions/custom-provider-gitlab-duo&quot;,</span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a> 		&quot;packages/coding-agent/examples/extensions/sandbox&quot;,</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a> 		&quot;packages/coding-agent/examples/extensions/gondolin&quot;</span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a> 	],</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a> 	&quot;scripts&quot;: {</span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a> 		&quot;clean&quot;: &quot;npm run clean --workspaces&quot;,</span>
+<span id="L16"><a href="#L16" aria-label="第 16 行">  16</a> 		&quot;build&quot;: &quot;cd packages/chord &amp;&amp; npm run build &amp;&amp; cd ../tui &amp;&amp; npm run build &amp;&amp; cd ../telemetry &amp;&amp; npm run build &amp;&amp; cd ../ai &amp;&amp; npm run build &amp;&amp; cd ../durable &amp;&amp; npm run build &amp;&amp; cd ../agent &amp;&amp; npm run build &amp;&amp; cd ../session-backends/sqlite-node &amp;&amp; npm run build &amp;&amp; cd ../../protocol &amp;&amp; npm run build &amp;&amp; cd ../client &amp;&amp; npm run build &amp;&amp; cd ../server &amp;&amp; npm run build &amp;&amp; cd ../coding-agent &amp;&amp; npm run build&quot;,</span>
+<span id="L17"><a href="#L17" aria-label="第 17 行">  17</a> 		&quot;build:offline&quot;: &quot;cd packages/chord &amp;&amp; npm run build &amp;&amp; cd ../tui &amp;&amp; npm run build &amp;&amp; cd ../telemetry &amp;&amp; npm run build &amp;&amp; cd ../ai &amp;&amp; npm run build:offline &amp;&amp; cd ../durable &amp;&amp; npm run build &amp;&amp; cd ../agent &amp;&amp; npm run build &amp;&amp; cd ../session-backends/sqlite-node &amp;&amp; npm run build &amp;&amp; cd ../../protocol &amp;&amp; npm run build &amp;&amp; cd ../client &amp;&amp; npm run build &amp;&amp; cd ../server &amp;&amp; npm run build &amp;&amp; cd ../coding-agent &amp;&amp; npm run build&quot;,</span>
+<span id="L18"><a href="#L18" aria-label="第 18 行">  18</a> 		&quot;build:native:darwin&quot;: &quot;npm --prefix packages/tui run build:native:darwin&quot;,</span>
+<span id="L19"><a href="#L19" aria-label="第 19 行">  19</a> 		&quot;build:native:linux&quot;: &quot;npm --prefix packages/tui run build:native:linux&quot;,</span>
+<span id="L20"><a href="#L20" aria-label="第 20 行">  20</a> 		&quot;build:native:win32&quot;: &quot;npm --prefix packages/tui run build:native:win32&quot;,</span>
+<span id="L21"><a href="#L21" aria-label="第 21 行">  21</a> 		&quot;check&quot;: &quot;biome check --write --error-on-warnings . &amp;&amp; npm run check:pinned-deps &amp;&amp; npm run check:runtime-deps &amp;&amp; npm run check:ts-imports &amp;&amp; npm run check:entry-graphs &amp;&amp; npm run check:shrinkwrap &amp;&amp; npm run check:install-lock:coding-agent &amp;&amp; tsgo --noEmit &amp;&amp; npm run check:browser-smoke&quot;,</span>
+<span id="L22"><a href="#L22" aria-label="第 22 行">  22</a> 		&quot;check:browser-smoke&quot;: &quot;node scripts/check-browser-smoke.mjs&quot;,</span>
+<span id="L23"><a href="#L23" aria-label="第 23 行">  23</a> 		&quot;check:pinned-deps&quot;: &quot;node scripts/check-pinned-deps.mjs&quot;,</span>
+<span id="L24"><a href="#L24" aria-label="第 24 行">  24</a> 		&quot;check:runtime-deps&quot;: &quot;node scripts/check-runtime-deps.mjs&quot;,</span>
+<span id="L25"><a href="#L25" aria-label="第 25 行">  25</a> 		&quot;check:package-install&quot;: &quot;node scripts/coding-agent-consumer.mjs&quot;,</span>
+<span id="L26"><a href="#L26" aria-label="第 26 行">  26</a> 		&quot;check:shrinkwrap&quot;: &quot;node scripts/generate-coding-agent-shrinkwrap.mjs --check&quot;,</span>
+<span id="L27"><a href="#L27" aria-label="第 27 行">  27</a> 		&quot;check:install-lock:coding-agent&quot;: &quot;node scripts/generate-coding-agent-install-lock.mjs --check&quot;,</span>
+<span id="L28"><a href="#L28" aria-label="第 28 行">  28</a> 		&quot;check:ts-imports&quot;: &quot;node scripts/check-ts-relative-imports.mjs&quot;,</span>
+<span id="L29"><a href="#L29" aria-label="第 29 行">  29</a> 		&quot;check:entry-graphs&quot;: &quot;node scripts/check-entry-graphs.mjs&quot;,</span>
+<span id="L30"><a href="#L30" aria-label="第 30 行">  30</a> 		&quot;generate:models&quot;: &quot;npm --prefix packages/ai run generate-models &amp;&amp; npm --prefix packages/ai run generate-image-models&quot;,</span>
+<span id="L31"><a href="#L31" aria-label="第 31 行">  31</a> 		&quot;hydrate:model-data&quot;: &quot;npm --prefix packages/ai run hydrate-model-data&quot;,</span>
+<span id="L32"><a href="#L32" aria-label="第 32 行">  32</a> 		&quot;check:model-data&quot;: &quot;npm --prefix packages/ai run check:model-data&quot;,</span>
+<span id="L33"><a href="#L33" aria-label="第 33 行">  33</a> 		&quot;generate:model-catalog&quot;: &quot;npm --prefix packages/ai run generate-model-catalog&quot;,</span>
+<span id="L34"><a href="#L34" aria-label="第 34 行">  34</a> 		&quot;diff:model-catalog&quot;: &quot;node scripts/diff-model-catalog.mjs&quot;,</span>
+<span id="L35"><a href="#L35" aria-label="第 35 行">  35</a> 		&quot;eval&quot;: &quot;npm run eval --workspace=@earendil-works/pi-evals --&quot;,</span>
+<span id="L36"><a href="#L36" aria-label="第 36 行">  36</a> 		&quot;check:model-catalog&quot;: &quot;node scripts/publish-model-catalog.mjs --input .artifacts/model-catalog --dry-run&quot;,</span>
+<span id="L37"><a href="#L37" aria-label="第 37 行">  37</a> 		&quot;profile:tui&quot;: &quot;node scripts/profile-coding-agent-node.mjs --mode tui&quot;,</span>
+<span id="L38"><a href="#L38" aria-label="第 38 行">  38</a> 		&quot;profile:rpc&quot;: &quot;node scripts/profile-coding-agent-node.mjs --mode rpc&quot;,</span>
+<span id="L39"><a href="#L39" aria-label="第 39 行">  39</a> 		&quot;test&quot;: &quot;npm run test:scripts &amp;&amp; npm run test --workspaces --if-present&quot;,</span>
+<span id="L40"><a href="#L40" aria-label="第 40 行">  40</a> 		&quot;test:scripts&quot;: &quot;node --test scripts/*.test.mjs&quot;,</span>
+<span id="L41"><a href="#L41" aria-label="第 41 行">  41</a> 		&quot;version:patch&quot;: &quot;npm version patch --workspaces --no-git-tag-version --no-workspaces-update &amp;&amp; node scripts/sync-versions.js &amp;&amp; npm install --package-lock-only --ignore-scripts&quot;,</span>
+<span id="L42"><a href="#L42" aria-label="第 42 行">  42</a> 		&quot;version:minor&quot;: &quot;npm version minor --workspaces --no-git-tag-version --no-workspaces-update &amp;&amp; node scripts/sync-versions.js &amp;&amp; npm install --package-lock-only --ignore-scripts&quot;,</span>
+<span id="L43"><a href="#L43" aria-label="第 43 行">  43</a> 		&quot;version:major&quot;: &quot;npm version major --workspaces --no-git-tag-version --no-workspaces-update &amp;&amp; node scripts/sync-versions.js &amp;&amp; npm install --package-lock-only --ignore-scripts&quot;,</span>
+<span id="L44"><a href="#L44" aria-label="第 44 行">  44</a> 		&quot;version:set&quot;: &quot;npm version --workspaces --no-workspaces-update&quot;,</span>
+<span id="L45"><a href="#L45" aria-label="第 45 行">  45</a> 		&quot;prepublishOnly&quot;: &quot;npm run clean &amp;&amp; npm run build &amp;&amp; npm run check&quot;,</span>
+<span id="L46"><a href="#L46" aria-label="第 46 行">  46</a> 		&quot;publish&quot;: &quot;npm run prepublishOnly &amp;&amp; node scripts/publish.mjs&quot;,</span>
+<span id="L47"><a href="#L47" aria-label="第 47 行">  47</a> 		&quot;publish:dry&quot;: &quot;npm run prepublishOnly &amp;&amp; node scripts/publish.mjs --dry-run&quot;,</span>
+<span id="L48"><a href="#L48" aria-label="第 48 行">  48</a> 		&quot;release:local&quot;: &quot;node scripts/local-release.mjs&quot;,</span>
+<span id="L49"><a href="#L49" aria-label="第 49 行">  49</a> 		&quot;shrinkwrap:coding-agent&quot;: &quot;node scripts/generate-coding-agent-shrinkwrap.mjs&quot;,</span>
+<span id="L50"><a href="#L50" aria-label="第 50 行">  50</a> 		&quot;install-lock:coding-agent&quot;: &quot;node scripts/generate-coding-agent-install-lock.mjs&quot;,</span>
+<span id="L51"><a href="#L51" aria-label="第 51 行">  51</a> 		&quot;release:patch&quot;: &quot;node scripts/release.mjs patch&quot;,</span>
+<span id="L52"><a href="#L52" aria-label="第 52 行">  52</a> 		&quot;release:minor&quot;: &quot;node scripts/release.mjs minor&quot;,</span>
+<span id="L53"><a href="#L53" aria-label="第 53 行">  53</a> 		&quot;release:major&quot;: &quot;node scripts/release.mjs major&quot;,</span>
+<span id="L54"><a href="#L54" aria-label="第 54 行">  54</a> 		&quot;release:fix-links&quot;: &quot;node scripts/release-notes.mjs fix-github-releases&quot;,</span>
+<span id="L55"><a href="#L55" aria-label="第 55 行">  55</a> 		&quot;prepare&quot;: &quot;husky&quot;</span>
+<span id="L56"><a href="#L56" aria-label="第 56 行">  56</a> 	},</span>
+<span id="L57"><a href="#L57" aria-label="第 57 行">  57</a> 	&quot;devDependencies&quot;: {</span>
+<span id="L58"><a href="#L58" aria-label="第 58 行">  58</a> 		&quot;@anthropic-ai/sandbox-runtime&quot;: &quot;0.0.26&quot;,</span>
+<span id="L59"><a href="#L59" aria-label="第 59 行">  59</a> 		&quot;@biomejs/biome&quot;: &quot;2.3.5&quot;,</span>
+<span id="L60"><a href="#L60" aria-label="第 60 行">  60</a> 		&quot;@types/node&quot;: &quot;22.19.19&quot;,</span>
+<span id="L61"><a href="#L61" aria-label="第 61 行">  61</a> 		&quot;@typescript/native-preview&quot;: &quot;7.0.0-dev.20260120.1&quot;,</span>
+<span id="L62"><a href="#L62" aria-label="第 62 行">  62</a> 		&quot;esbuild&quot;: &quot;0.28.2&quot;,</span>
+<span id="L63"><a href="#L63" aria-label="第 63 行">  63</a> 		&quot;husky&quot;: &quot;9.1.7&quot;,</span>
+<span id="L64"><a href="#L64" aria-label="第 64 行">  64</a> 		&quot;shx&quot;: &quot;0.4.0&quot;,</span>
+<span id="L65"><a href="#L65" aria-label="第 65 行">  65</a> 		&quot;tsx&quot;: &quot;4.22.1&quot;,</span>
+<span id="L66"><a href="#L66" aria-label="第 66 行">  66</a> 		&quot;typescript&quot;: &quot;5.9.3&quot;</span>
+<span id="L67"><a href="#L67" aria-label="第 67 行">  67</a> 	},</span>
+<span id="L68"><a href="#L68" aria-label="第 68 行">  68</a> 	&quot;engines&quot;: {</span>
+<span id="L69"><a href="#L69" aria-label="第 69 行">  69</a> 		&quot;node&quot;: &quot;&gt;=22.19.0&quot;</span>
+<span id="L70"><a href="#L70" aria-label="第 70 行">  70</a> 	},</span>
+<span id="L71"><a href="#L71" aria-label="第 71 行">  71</a> 	&quot;version&quot;: &quot;0.0.3&quot;,</span>
+<span id="L72"><a href="#L72" aria-label="第 72 行">  72</a> 	&quot;overrides&quot;: {</span>
+<span id="L73"><a href="#L73" aria-label="第 73 行">  73</a> 		&quot;protobufjs&quot;: &quot;7.6.6&quot;</span>
+<span id="L74"><a href="#L74" aria-label="第 74 行">  74</a> 	}</span>
+<span id="L75"><a href="#L75" aria-label="第 75 行">  75</a> }</span></code></pre></body></html>

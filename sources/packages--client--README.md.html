@@ -1,0 +1,72 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>packages/client/README.md · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>packages/client/README.md</h1><p>本地快照 · 36b60d2e8985 · 2026-09-23</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> # @earendil-works/pi-client</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a> </span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a> Transport-neutral client for the experimental Pi service protocol.</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a> </span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a> ```ts</span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a> import { Client, type ByteTransportFactory } from &quot;@earendil-works/pi-client&quot;;</span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a> </span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a> const transportFactory: ByteTransportFactory = async (handlers) =&gt; {</span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a>   // Connect using WebSocket, Unix socket, or another ordered byte transport.</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a>   return {</span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a>     async send(chunk) {</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a>       // Deliver bytes in invocation order and honor backpressure.</span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a>     },</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a>     close() {},</span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a>   };</span>
+<span id="L16"><a href="#L16" aria-label="第 16 行">  16</a> };</span>
+<span id="L17"><a href="#L17" aria-label="第 17 行">  17</a> </span>
+<span id="L18"><a href="#L18" aria-label="第 18 行">  18</a> const client = await Client.connect({</span>
+<span id="L19"><a href="#L19" aria-label="第 19 行">  19</a>   serverId: &quot;01234567-89ab-4def-8123-456789abcdef&quot;,</span>
+<span id="L20"><a href="#L20" aria-label="第 20 行">  20</a>   transportFactory,</span>
+<span id="L21"><a href="#L21" aria-label="第 21 行">  21</a> });</span>
+<span id="L22"><a href="#L22" aria-label="第 22 行">  22</a> const result = await client.request(</span>
+<span id="L23"><a href="#L23" aria-label="第 23 行">  23</a>   { serverId: client.hello.serverId },</span>
+<span id="L24"><a href="#L24" aria-label="第 24 行">  24</a>   { serviceId: &quot;example.service&quot;, member: &quot;read&quot;, args: [] },</span>
+<span id="L25"><a href="#L25" aria-label="第 25 行">  25</a> );</span>
+<span id="L26"><a href="#L26" aria-label="第 26 行">  26</a> ```</span>
+<span id="L27"><a href="#L27" aria-label="第 27 行">  27</a> </span>
+<span id="L28"><a href="#L28" aria-label="第 28 行">  28</a> The client verifies that the physical endpoint reports the expected logical `serverId`. Server-wide requests carry that ID, and every Session request carries the full live target `{ serverId, sessionId, attachmentId }`. The combined durable address prevents cross-server or cross-session misrouting; the server-generated attachment ID rejects delayed frames after switching or reattaching.</span>
+<span id="L29"><a href="#L29" aria-label="第 29 行">  29</a> </span>
+<span id="L30"><a href="#L30" aria-label="第 30 行">  30</a> Typed server and Session APIs are provided by Chord service bindings owned by the application. `createClientServiceTransport()` adapts a lazily resolved server or Session route to a Chord transport; `request()` and `subscribeService()` remain its low-level primitives. The client uses Chord&#x27;s service-control parsers and per-subscription state decoder; `pi-protocol` only validates the routed envelope and strict-JSON boundary. A service subscription returns a complete provider snapshot; the binding installs it and then calls `start()` to release updates buffered during hydration. `Client` applies ordered out-of-band attachment changes but deliberately does not construct typed service proxies or interpret application contracts.</span>
+<span id="L31"><a href="#L31" aria-label="第 31 行">  31</a> </span>
+<span id="L32"><a href="#L32" aria-label="第 32 行">  32</a> Application observation APIs such as the coding agent&#x27;s `Transcript` are ordinary Chord services. The client does not interpret their snapshots or updates.</span>
+<span id="L33"><a href="#L33" aria-label="第 33 行">  33</a> </span>
+<span id="L34"><a href="#L34" aria-label="第 34 行">  34</a> On disconnect or disposal, pending requests reject locally, but accepted work may still complete remotely before the attachment is released. The client clears its live attachment route. It never reconnects or replays requests automatically. After disconnection, call `reconnect()`, attach through the application&#x27;s management service again, and explicitly repeat only operations known to be safe.</span>
+<span id="L35"><a href="#L35" aria-label="第 35 行">  35</a> </span>
+<span id="L36"><a href="#L36" aria-label="第 36 行">  36</a> The experimental local coordinator only provides a stable endpoint and relays traffic. Replaceable server processes own Session and worker lifecycle outside the public client protocol.</span>
+<span id="L37"><a href="#L37" aria-label="第 37 行">  37</a> </span>
+<span id="L38"><a href="#L38" aria-label="第 38 行">  38</a> Call transport handlers as follows:</span>
+<span id="L39"><a href="#L39" aria-label="第 39 行">  39</a> </span>
+<span id="L40"><a href="#L40" aria-label="第 40 行">  40</a> - `handlers.onData(chunk)` for inbound bytes;</span>
+<span id="L41"><a href="#L41" aria-label="第 41 行">  41</a> - `handlers.onClose()` for an orderly terminal close;</span>
+<span id="L42"><a href="#L42" aria-label="第 42 行">  42</a> - `handlers.onError(error)` for transport failures.</span>
+<span id="L43"><a href="#L43" aria-label="第 43 行">  43</a> </span>
+<span id="L44"><a href="#L44" aria-label="第 44 行">  44</a> A transport factory creates a fresh authenticated connection for each attempt. Requests are correlated by ID, and server failures are exposed as `ServerError`.</span>
+<span id="L45"><a href="#L45" aria-label="第 45 行">  45</a> </span>
+<span id="L46"><a href="#L46" aria-label="第 46 行">  46</a> ## Unix-domain sockets</span>
+<span id="L47"><a href="#L47" aria-label="第 47 行">  47</a> </span>
+<span id="L48"><a href="#L48" aria-label="第 48 行">  48</a> Node.js and Bun consumers can use the separate Unix transport:</span>
+<span id="L49"><a href="#L49" aria-label="第 49 行">  49</a> </span>
+<span id="L50"><a href="#L50" aria-label="第 50 行">  50</a> ```ts</span>
+<span id="L51"><a href="#L51" aria-label="第 51 行">  51</a> import { Client } from &quot;@earendil-works/pi-client&quot;;</span>
+<span id="L52"><a href="#L52" aria-label="第 52 行">  52</a> import { createUnixTransportFactory } from &quot;@earendil-works/pi-client/unix&quot;;</span>
+<span id="L53"><a href="#L53" aria-label="第 53 行">  53</a> </span>
+<span id="L54"><a href="#L54" aria-label="第 54 行">  54</a> const client = new Client({</span>
+<span id="L55"><a href="#L55" aria-label="第 55 行">  55</a>   serverId: &quot;01234567-89ab-4def-8123-456789abcdef&quot;,</span>
+<span id="L56"><a href="#L56" aria-label="第 56 行">  56</a>   transportFactory: createUnixTransportFactory({ path: &quot;/tmp/pi.sock&quot; }),</span>
+<span id="L57"><a href="#L57" aria-label="第 57 行">  57</a> });</span>
+<span id="L58"><a href="#L58" aria-label="第 58 行">  58</a> await client.connect();</span>
+<span id="L59"><a href="#L59" aria-label="第 59 行">  59</a> ```</span>
+<span id="L60"><a href="#L60" aria-label="第 60 行">  60</a> </span>
+<span id="L61"><a href="#L61" aria-label="第 61 行">  61</a> Unix discovery scans an explicit physical-route directory, derives each expected server ID from its filename, and verifies it through the existing handshake:</span>
+<span id="L62"><a href="#L62" aria-label="第 62 行">  62</a> </span>
+<span id="L63"><a href="#L63" aria-label="第 63 行">  63</a> ```ts</span>
+<span id="L64"><a href="#L64" aria-label="第 64 行">  64</a> import { discoverUnixServers } from &quot;@earendil-works/pi-client/unix&quot;;</span>
+<span id="L65"><a href="#L65" aria-label="第 65 行">  65</a> </span>
+<span id="L66"><a href="#L66" aria-label="第 66 行">  66</a> const routes = await discoverUnixServers({ directory: &quot;/run/user/1000/pi&quot; });</span>
+<span id="L67"><a href="#L67" aria-label="第 67 行">  67</a> // [{ serverId: &quot;...&quot;, path: &quot;/run/user/1000/pi/&lt;serverId&gt;.sock&quot; }]</span>
+<span id="L68"><a href="#L68" aria-label="第 68 行">  68</a> ```</span>
+<span id="L69"><a href="#L69" aria-label="第 69 行">  69</a> </span>
+<span id="L70"><a href="#L70" aria-label="第 70 行">  70</a> Malformed entries, non-sockets, stale or unresponsive endpoints, and server-ID mismatches are ignored. Discovery is read-only and probes at most 16 sockets concurrently. Unexpected filesystem and socket errors reject discovery. Pass `timeoutMs` to override the default probe timeout.</span>
+<span id="L71"><a href="#L71" aria-label="第 71 行">  71</a> </span>
+<span id="L72"><a href="#L72" aria-label="第 72 行">  72</a> `ClientOptions.maxFrameLength` bounds protocol payloads. `maxPendingBytes` bounds queued Unix transport output. Configure matching limits on both peers.</span></code></pre></body></html>

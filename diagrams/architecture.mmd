@@ -1,0 +1,21 @@
+flowchart TD
+BIN[pi 命令] --> CLI[cli.ts]
+CLI --> MAIN[main.ts main]
+MAIN --> MODE{运行模式}
+MODE -->|interactive| IM[InteractiveMode]
+MODE -->|print| PM[runPrintMode]
+MODE -->|rpc| RM[runRpcMode]
+MAIN --> RT[AgentSessionRuntime]
+RT --> ASSEMBLE[会话装配]
+USER[SDK 用户] --> SDK[createAgentSession]
+SDK --> ASSEMBLE
+ASSEMBLE --> S[AgentSession]
+ASSEMBLE --> A[Agent]
+S --> A
+S --> H[会话与扩展]
+A --> L[agent loop]
+L --> F[streamFn]
+F --> M[ModelRuntime 与 pi-ai]
+L --> T[工具执行]
+A --> E[生命周期事件]
+E --> UI[CLI 与其他消费者]

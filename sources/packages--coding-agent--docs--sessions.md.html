@@ -1,0 +1,145 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>packages/coding-agent/docs/sessions.md · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>packages/coding-agent/docs/sessions.md</h1><p>本地快照 · 36b60d2e8985 · 2026-09-19</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> # Sessions</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a> </span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a> Pi saves conversations as sessions so you can continue work, branch from earlier turns, and revisit previous paths.</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a> </span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a> ## Session Storage</span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a> </span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a> Sessions auto-save to `~/.pi/agent/sessions/`, organized by working directory. Each session is a JSONL file with a tree structure.</span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a> </span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a> ```bash</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a> pi -c                  # Continue most recent session</span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a> pi -r                  # Browse and select from past sessions</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a> pi --no-session        # Ephemeral mode; do not save</span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a> pi --name &quot;my task&quot;    # Set session display name at startup</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a> pi --session &lt;path|id&gt; # Use a specific session file or partial session ID</span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a> pi --fork &lt;path|id&gt;    # Fork a session file or partial session ID into a new session</span>
+<span id="L16"><a href="#L16" aria-label="第 16 行">  16</a> ```</span>
+<span id="L17"><a href="#L17" aria-label="第 17 行">  17</a> </span>
+<span id="L18"><a href="#L18" aria-label="第 18 行">  18</a> Use `/session` in interactive mode to see the current session file, session ID, message count, tokens, and cost.</span>
+<span id="L19"><a href="#L19" aria-label="第 19 行">  19</a> </span>
+<span id="L20"><a href="#L20" aria-label="第 20 行">  20</a> For the JSONL file format and SessionManager API, see [Session Format](session-format.md).</span>
+<span id="L21"><a href="#L21" aria-label="第 21 行">  21</a> </span>
+<span id="L22"><a href="#L22" aria-label="第 22 行">  22</a> ## Session Commands</span>
+<span id="L23"><a href="#L23" aria-label="第 23 行">  23</a> </span>
+<span id="L24"><a href="#L24" aria-label="第 24 行">  24</a> | Command | Description |</span>
+<span id="L25"><a href="#L25" aria-label="第 25 行">  25</a> |---------|-------------|</span>
+<span id="L26"><a href="#L26" aria-label="第 26 行">  26</a> | `/resume` | Browse and select previous sessions |</span>
+<span id="L27"><a href="#L27" aria-label="第 27 行">  27</a> | `/new` | Start a new session |</span>
+<span id="L28"><a href="#L28" aria-label="第 28 行">  28</a> | `/name &lt;name&gt;` | Set the current session display name |</span>
+<span id="L29"><a href="#L29" aria-label="第 29 行">  29</a> | `/session` | Show session info |</span>
+<span id="L30"><a href="#L30" aria-label="第 30 行">  30</a> | `/tree` | Navigate the current session tree |</span>
+<span id="L31"><a href="#L31" aria-label="第 31 行">  31</a> | `/fork` | Create a new session from a previous user message |</span>
+<span id="L32"><a href="#L32" aria-label="第 32 行">  32</a> | `/clone` | Duplicate the current active branch into a new session |</span>
+<span id="L33"><a href="#L33" aria-label="第 33 行">  33</a> | `/compact [prompt]` | Summarize older context; see [Compaction](compaction.md) |</span>
+<span id="L34"><a href="#L34" aria-label="第 34 行">  34</a> | `/export [file]` | Export session to HTML |</span>
+<span id="L35"><a href="#L35" aria-label="第 35 行">  35</a> | `/share` | Upload as private GitHub gist with shareable HTML link |</span>
+<span id="L36"><a href="#L36" aria-label="第 36 行">  36</a> </span>
+<span id="L37"><a href="#L37" aria-label="第 37 行">  37</a> ## Resuming and Deleting Sessions</span>
+<span id="L38"><a href="#L38" aria-label="第 38 行">  38</a> </span>
+<span id="L39"><a href="#L39" aria-label="第 39 行">  39</a> `/resume` opens an interactive session picker for the current project. `pi -r` opens the same picker at startup.</span>
+<span id="L40"><a href="#L40" aria-label="第 40 行">  40</a> </span>
+<span id="L41"><a href="#L41" aria-label="第 41 行">  41</a> In the picker you can:</span>
+<span id="L42"><a href="#L42" aria-label="第 42 行">  42</a> </span>
+<span id="L43"><a href="#L43" aria-label="第 43 行">  43</a> - search by typing</span>
+<span id="L44"><a href="#L44" aria-label="第 44 行">  44</a> - toggle path display with Ctrl+P</span>
+<span id="L45"><a href="#L45" aria-label="第 45 行">  45</a> - toggle sort mode with Ctrl+S</span>
+<span id="L46"><a href="#L46" aria-label="第 46 行">  46</a> - filter to named sessions with Ctrl+N</span>
+<span id="L47"><a href="#L47" aria-label="第 47 行">  47</a> - rename with Ctrl+R</span>
+<span id="L48"><a href="#L48" aria-label="第 48 行">  48</a> - delete with Ctrl+D, then confirm</span>
+<span id="L49"><a href="#L49" aria-label="第 49 行">  49</a> </span>
+<span id="L50"><a href="#L50" aria-label="第 50 行">  50</a> When available, pi uses the `trash` CLI for deletion instead of permanently removing files.</span>
+<span id="L51"><a href="#L51" aria-label="第 51 行">  51</a> </span>
+<span id="L52"><a href="#L52" aria-label="第 52 行">  52</a> ## Naming Sessions</span>
+<span id="L53"><a href="#L53" aria-label="第 53 行">  53</a> </span>
+<span id="L54"><a href="#L54" aria-label="第 54 行">  54</a> Use `/name &lt;name&gt;` to set a human-readable session name:</span>
+<span id="L55"><a href="#L55" aria-label="第 55 行">  55</a> </span>
+<span id="L56"><a href="#L56" aria-label="第 56 行">  56</a> ```text</span>
+<span id="L57"><a href="#L57" aria-label="第 57 行">  57</a> /name Refactor auth module</span>
+<span id="L58"><a href="#L58" aria-label="第 58 行">  58</a> ```</span>
+<span id="L59"><a href="#L59" aria-label="第 59 行">  59</a> </span>
+<span id="L60"><a href="#L60" aria-label="第 60 行">  60</a> Set the name at startup with `--name` or `-n`:</span>
+<span id="L61"><a href="#L61" aria-label="第 61 行">  61</a> </span>
+<span id="L62"><a href="#L62" aria-label="第 62 行">  62</a> ```bash</span>
+<span id="L63"><a href="#L63" aria-label="第 63 行">  63</a> pi --name &quot;Refactor auth module&quot;</span>
+<span id="L64"><a href="#L64" aria-label="第 64 行">  64</a> pi --name &quot;CI audit&quot; -p &quot;Review this build failure&quot;</span>
+<span id="L65"><a href="#L65" aria-label="第 65 行">  65</a> ```</span>
+<span id="L66"><a href="#L66" aria-label="第 66 行">  66</a> </span>
+<span id="L67"><a href="#L67" aria-label="第 67 行">  67</a> Named sessions are easier to find in `/resume` and `pi -r`.</span>
+<span id="L68"><a href="#L68" aria-label="第 68 行">  68</a> </span>
+<span id="L69"><a href="#L69" aria-label="第 69 行">  69</a> ## Branching with `/tree`</span>
+<span id="L70"><a href="#L70" aria-label="第 70 行">  70</a> </span>
+<span id="L71"><a href="#L71" aria-label="第 71 行">  71</a> Sessions are stored as trees. Every entry has an `id` and `parentId`, and the current position is the active leaf. `/tree` lets you jump to any previous point and continue from there without creating a new file.</span>
+<span id="L72"><a href="#L72" aria-label="第 72 行">  72</a> </span>
+<span id="L73"><a href="#L73" aria-label="第 73 行">  73</a> &lt;p align=&quot;center&quot;&gt;&lt;img src=&quot;images/tree-view.png&quot; alt=&quot;Tree View&quot; width=&quot;600&quot;&gt;&lt;/p&gt;</span>
+<span id="L74"><a href="#L74" aria-label="第 74 行">  74</a> </span>
+<span id="L75"><a href="#L75" aria-label="第 75 行">  75</a> Example shape:</span>
+<span id="L76"><a href="#L76" aria-label="第 76 行">  76</a> </span>
+<span id="L77"><a href="#L77" aria-label="第 77 行">  77</a> ```text</span>
+<span id="L78"><a href="#L78" aria-label="第 78 行">  78</a> ├─ user: &quot;Hello, can you help...&quot;</span>
+<span id="L79"><a href="#L79" aria-label="第 79 行">  79</a> │  └─ assistant: &quot;Of course! I can...&quot;</span>
+<span id="L80"><a href="#L80" aria-label="第 80 行">  80</a> │     ├─ user: &quot;Let&#x27;s try approach A...&quot;</span>
+<span id="L81"><a href="#L81" aria-label="第 81 行">  81</a> │     │  └─ assistant: &quot;For approach A...&quot;</span>
+<span id="L82"><a href="#L82" aria-label="第 82 行">  82</a> │     │     └─ user: &quot;That worked...&quot;  ← active</span>
+<span id="L83"><a href="#L83" aria-label="第 83 行">  83</a> │     └─ user: &quot;Actually, approach B...&quot;</span>
+<span id="L84"><a href="#L84" aria-label="第 84 行">  84</a> │        └─ assistant: &quot;For approach B...&quot;</span>
+<span id="L85"><a href="#L85" aria-label="第 85 行">  85</a> ```</span>
+<span id="L86"><a href="#L86" aria-label="第 86 行">  86</a> </span>
+<span id="L87"><a href="#L87" aria-label="第 87 行">  87</a> ### Tree Controls</span>
+<span id="L88"><a href="#L88" aria-label="第 88 行">  88</a> </span>
+<span id="L89"><a href="#L89" aria-label="第 89 行">  89</a> | Key | Action |</span>
+<span id="L90"><a href="#L90" aria-label="第 90 行">  90</a> |-----|--------|</span>
+<span id="L91"><a href="#L91" aria-label="第 91 行">  91</a> | ↑/↓ | Navigate visible entries |</span>
+<span id="L92"><a href="#L92" aria-label="第 92 行">  92</a> | ←/→ | Page up/down |</span>
+<span id="L93"><a href="#L93" aria-label="第 93 行">  93</a> | Ctrl+←/Ctrl+→ or Alt+←/Alt+→ | Fold/unfold or jump between branch segments |</span>
+<span id="L94"><a href="#L94" aria-label="第 94 行">  94</a> | Shift+L | Set or clear a label on the selected entry |</span>
+<span id="L95"><a href="#L95" aria-label="第 95 行">  95</a> | Shift+T | Toggle label timestamps |</span>
+<span id="L96"><a href="#L96" aria-label="第 96 行">  96</a> | Enter | Select entry |</span>
+<span id="L97"><a href="#L97" aria-label="第 97 行">  97</a> | Escape/Ctrl+C | Cancel |</span>
+<span id="L98"><a href="#L98" aria-label="第 98 行">  98</a> | Ctrl+O | Cycle filter mode |</span>
+<span id="L99"><a href="#L99" aria-label="第 99 行">  99</a> </span>
+<span id="L100"><a href="#L100" aria-label="第 100 行"> 100</a> Filter modes are: default, no-tools, user-only, labeled-only, and all. Configure the default with `treeFilterMode` in [Settings](settings.md).</span>
+<span id="L101"><a href="#L101" aria-label="第 101 行"> 101</a> </span>
+<span id="L102"><a href="#L102" aria-label="第 102 行"> 102</a> ### Selection Behavior</span>
+<span id="L103"><a href="#L103" aria-label="第 103 行"> 103</a> </span>
+<span id="L104"><a href="#L104" aria-label="第 104 行"> 104</a> Selecting a user or custom message:</span>
+<span id="L105"><a href="#L105" aria-label="第 105 行"> 105</a> </span>
+<span id="L106"><a href="#L106" aria-label="第 106 行"> 106</a> 1. Moves the leaf to the selected message&#x27;s parent.</span>
+<span id="L107"><a href="#L107" aria-label="第 107 行"> 107</a> 2. Places the selected message text in the editor.</span>
+<span id="L108"><a href="#L108" aria-label="第 108 行"> 108</a> 3. Lets you edit and resubmit, creating a new branch.</span>
+<span id="L109"><a href="#L109" aria-label="第 109 行"> 109</a> </span>
+<span id="L110"><a href="#L110" aria-label="第 110 行"> 110</a> Selecting an assistant, tool, compaction, or other non-user entry:</span>
+<span id="L111"><a href="#L111" aria-label="第 111 行"> 111</a> </span>
+<span id="L112"><a href="#L112" aria-label="第 112 行"> 112</a> 1. Moves the leaf to that entry.</span>
+<span id="L113"><a href="#L113" aria-label="第 113 行"> 113</a> 2. Leaves the editor empty.</span>
+<span id="L114"><a href="#L114" aria-label="第 114 行"> 114</a> 3. Lets you continue from that point.</span>
+<span id="L115"><a href="#L115" aria-label="第 115 行"> 115</a> </span>
+<span id="L116"><a href="#L116" aria-label="第 116 行"> 116</a> Selecting the root user message resets the leaf to an empty conversation and places the original prompt in the editor.</span>
+<span id="L117"><a href="#L117" aria-label="第 117 行"> 117</a> </span>
+<span id="L118"><a href="#L118" aria-label="第 118 行"> 118</a> ## `/tree`, `/fork`, and `/clone`</span>
+<span id="L119"><a href="#L119" aria-label="第 119 行"> 119</a> </span>
+<span id="L120"><a href="#L120" aria-label="第 120 行"> 120</a> | Feature | `/tree` | `/fork` | `/clone` |</span>
+<span id="L121"><a href="#L121" aria-label="第 121 行"> 121</a> |---------|---------|---------|----------|</span>
+<span id="L122"><a href="#L122" aria-label="第 122 行"> 122</a> | Output | Same session file | New session file | New session file |</span>
+<span id="L123"><a href="#L123" aria-label="第 123 行"> 123</a> | View | Full tree | User-message selector | Current active branch |</span>
+<span id="L124"><a href="#L124" aria-label="第 124 行"> 124</a> | Typical use | Explore alternatives in place | Start a new session from an earlier prompt | Duplicate current work before continuing |</span>
+<span id="L125"><a href="#L125" aria-label="第 125 行"> 125</a> | Summary | Optional branch summary | None | None |</span>
+<span id="L126"><a href="#L126" aria-label="第 126 行"> 126</a> </span>
+<span id="L127"><a href="#L127" aria-label="第 127 行"> 127</a> Use `/tree` when you want to keep alternatives together. Use `/fork` or `/clone` when you want a separate session file.</span>
+<span id="L128"><a href="#L128" aria-label="第 128 行"> 128</a> </span>
+<span id="L129"><a href="#L129" aria-label="第 129 行"> 129</a> ## Branch Summaries</span>
+<span id="L130"><a href="#L130" aria-label="第 130 行"> 130</a> </span>
+<span id="L131"><a href="#L131" aria-label="第 131 行"> 131</a> When `/tree` switches away from one branch to another, pi can summarize the abandoned branch and attach that summary at the new position. This preserves important context from the path you left without replaying the whole branch.</span>
+<span id="L132"><a href="#L132" aria-label="第 132 行"> 132</a> </span>
+<span id="L133"><a href="#L133" aria-label="第 133 行"> 133</a> When prompted, choose one of:</span>
+<span id="L134"><a href="#L134" aria-label="第 134 行"> 134</a> </span>
+<span id="L135"><a href="#L135" aria-label="第 135 行"> 135</a> 1. no summary</span>
+<span id="L136"><a href="#L136" aria-label="第 136 行"> 136</a> 2. summarize with the default prompt</span>
+<span id="L137"><a href="#L137" aria-label="第 137 行"> 137</a> 3. summarize with custom focus instructions</span>
+<span id="L138"><a href="#L138" aria-label="第 138 行"> 138</a> </span>
+<span id="L139"><a href="#L139" aria-label="第 139 行"> 139</a> See [Compaction](compaction.md) for branch summarization internals and extension hooks.</span>
+<span id="L140"><a href="#L140" aria-label="第 140 行"> 140</a> </span>
+<span id="L141"><a href="#L141" aria-label="第 141 行"> 141</a> ## Session Format</span>
+<span id="L142"><a href="#L142" aria-label="第 142 行"> 142</a> </span>
+<span id="L143"><a href="#L143" aria-label="第 143 行"> 143</a> Session files are JSONL and contain message entries, model changes, thinking-level changes, labels, compactions, branch summaries, and extension entries.</span>
+<span id="L144"><a href="#L144" aria-label="第 144 行"> 144</a> </span>
+<span id="L145"><a href="#L145" aria-label="第 145 行"> 145</a> For parsers, extensions, SDK usage, and the full SessionManager API, see [Session Format](session-format.md).</span></code></pre></body></html>

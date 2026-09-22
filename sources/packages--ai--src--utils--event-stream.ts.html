@@ -1,0 +1,110 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>packages/ai/src/utils/event-stream.ts · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>packages/ai/src/utils/event-stream.ts</h1><p>本地快照 · 36b60d2e8985 · 2026-09-23</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> import type { AssistantMessage, AssistantMessageEvent } from &quot;../types.ts&quot;;</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a> </span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a> class FifoQueue&lt;T&gt; {</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a> 	private incoming: T[] = [];</span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a> 	private outgoing: T[] = [];</span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a> </span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a> 	get length(): number {</span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a> 		return this.incoming.length + this.outgoing.length;</span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a> 	}</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a> </span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a> 	enqueue(value: T): void {</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a> 		this.incoming.push(value);</span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a> 	}</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a> </span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a> 	dequeue(): T | undefined {</span>
+<span id="L16"><a href="#L16" aria-label="第 16 行">  16</a> 		if (this.outgoing.length === 0) {</span>
+<span id="L17"><a href="#L17" aria-label="第 17 行">  17</a> 			while (this.incoming.length &gt; 0) {</span>
+<span id="L18"><a href="#L18" aria-label="第 18 行">  18</a> 				this.outgoing.push(this.incoming.pop()!);</span>
+<span id="L19"><a href="#L19" aria-label="第 19 行">  19</a> 			}</span>
+<span id="L20"><a href="#L20" aria-label="第 20 行">  20</a> 		}</span>
+<span id="L21"><a href="#L21" aria-label="第 21 行">  21</a> 		return this.outgoing.pop();</span>
+<span id="L22"><a href="#L22" aria-label="第 22 行">  22</a> 	}</span>
+<span id="L23"><a href="#L23" aria-label="第 23 行">  23</a> }</span>
+<span id="L24"><a href="#L24" aria-label="第 24 行">  24</a> </span>
+<span id="L25"><a href="#L25" aria-label="第 25 行">  25</a> // Generic event stream class for async iteration</span>
+<span id="L26"><a href="#L26" aria-label="第 26 行">  26</a> export class EventStream&lt;T, R = T&gt; implements AsyncIterable&lt;T&gt; {</span>
+<span id="L27"><a href="#L27" aria-label="第 27 行">  27</a> 	private queue = new FifoQueue&lt;T&gt;();</span>
+<span id="L28"><a href="#L28" aria-label="第 28 行">  28</a> 	private waiting = new FifoQueue&lt;(value: IteratorResult&lt;T&gt;) =&gt; void&gt;();</span>
+<span id="L29"><a href="#L29" aria-label="第 29 行">  29</a> 	private done = false;</span>
+<span id="L30"><a href="#L30" aria-label="第 30 行">  30</a> 	private finalResultPromise: Promise&lt;R&gt;;</span>
+<span id="L31"><a href="#L31" aria-label="第 31 行">  31</a> 	private resolveFinalResult!: (result: R) =&gt; void;</span>
+<span id="L32"><a href="#L32" aria-label="第 32 行">  32</a> 	private isComplete: (event: T) =&gt; boolean;</span>
+<span id="L33"><a href="#L33" aria-label="第 33 行">  33</a> 	private extractResult: (event: T) =&gt; R;</span>
+<span id="L34"><a href="#L34" aria-label="第 34 行">  34</a> </span>
+<span id="L35"><a href="#L35" aria-label="第 35 行">  35</a> 	constructor(isComplete: (event: T) =&gt; boolean, extractResult: (event: T) =&gt; R) {</span>
+<span id="L36"><a href="#L36" aria-label="第 36 行">  36</a> 		this.isComplete = isComplete;</span>
+<span id="L37"><a href="#L37" aria-label="第 37 行">  37</a> 		this.extractResult = extractResult;</span>
+<span id="L38"><a href="#L38" aria-label="第 38 行">  38</a> 		this.finalResultPromise = new Promise((resolve) =&gt; {</span>
+<span id="L39"><a href="#L39" aria-label="第 39 行">  39</a> 			this.resolveFinalResult = resolve;</span>
+<span id="L40"><a href="#L40" aria-label="第 40 行">  40</a> 		});</span>
+<span id="L41"><a href="#L41" aria-label="第 41 行">  41</a> 	}</span>
+<span id="L42"><a href="#L42" aria-label="第 42 行">  42</a> </span>
+<span id="L43"><a href="#L43" aria-label="第 43 行">  43</a> 	push(event: T): void {</span>
+<span id="L44"><a href="#L44" aria-label="第 44 行">  44</a> 		if (this.done) return;</span>
+<span id="L45"><a href="#L45" aria-label="第 45 行">  45</a> </span>
+<span id="L46"><a href="#L46" aria-label="第 46 行">  46</a> 		if (this.isComplete(event)) {</span>
+<span id="L47"><a href="#L47" aria-label="第 47 行">  47</a> 			this.done = true;</span>
+<span id="L48"><a href="#L48" aria-label="第 48 行">  48</a> 			this.resolveFinalResult(this.extractResult(event));</span>
+<span id="L49"><a href="#L49" aria-label="第 49 行">  49</a> 		}</span>
+<span id="L50"><a href="#L50" aria-label="第 50 行">  50</a> </span>
+<span id="L51"><a href="#L51" aria-label="第 51 行">  51</a> 		// Deliver to waiting consumer or queue it</span>
+<span id="L52"><a href="#L52" aria-label="第 52 行">  52</a> 		const waiter = this.waiting.dequeue();</span>
+<span id="L53"><a href="#L53" aria-label="第 53 行">  53</a> 		if (waiter) {</span>
+<span id="L54"><a href="#L54" aria-label="第 54 行">  54</a> 			waiter({ value: event, done: false });</span>
+<span id="L55"><a href="#L55" aria-label="第 55 行">  55</a> 		} else {</span>
+<span id="L56"><a href="#L56" aria-label="第 56 行">  56</a> 			this.queue.enqueue(event);</span>
+<span id="L57"><a href="#L57" aria-label="第 57 行">  57</a> 		}</span>
+<span id="L58"><a href="#L58" aria-label="第 58 行">  58</a> 	}</span>
+<span id="L59"><a href="#L59" aria-label="第 59 行">  59</a> </span>
+<span id="L60"><a href="#L60" aria-label="第 60 行">  60</a> 	end(result?: R): void {</span>
+<span id="L61"><a href="#L61" aria-label="第 61 行">  61</a> 		this.done = true;</span>
+<span id="L62"><a href="#L62" aria-label="第 62 行">  62</a> 		if (result !== undefined) {</span>
+<span id="L63"><a href="#L63" aria-label="第 63 行">  63</a> 			this.resolveFinalResult(result);</span>
+<span id="L64"><a href="#L64" aria-label="第 64 行">  64</a> 		}</span>
+<span id="L65"><a href="#L65" aria-label="第 65 行">  65</a> 		// Notify all waiting consumers that we&#x27;re done</span>
+<span id="L66"><a href="#L66" aria-label="第 66 行">  66</a> 		while (this.waiting.length &gt; 0) {</span>
+<span id="L67"><a href="#L67" aria-label="第 67 行">  67</a> 			const waiter = this.waiting.dequeue()!;</span>
+<span id="L68"><a href="#L68" aria-label="第 68 行">  68</a> 			waiter({ value: undefined as any, done: true });</span>
+<span id="L69"><a href="#L69" aria-label="第 69 行">  69</a> 		}</span>
+<span id="L70"><a href="#L70" aria-label="第 70 行">  70</a> 	}</span>
+<span id="L71"><a href="#L71" aria-label="第 71 行">  71</a> </span>
+<span id="L72"><a href="#L72" aria-label="第 72 行">  72</a> 	async *[Symbol.asyncIterator](): AsyncIterator&lt;T&gt; {</span>
+<span id="L73"><a href="#L73" aria-label="第 73 行">  73</a> 		while (true) {</span>
+<span id="L74"><a href="#L74" aria-label="第 74 行">  74</a> 			if (this.queue.length &gt; 0) {</span>
+<span id="L75"><a href="#L75" aria-label="第 75 行">  75</a> 				yield this.queue.dequeue()!;</span>
+<span id="L76"><a href="#L76" aria-label="第 76 行">  76</a> 			} else if (this.done) {</span>
+<span id="L77"><a href="#L77" aria-label="第 77 行">  77</a> 				return;</span>
+<span id="L78"><a href="#L78" aria-label="第 78 行">  78</a> 			} else {</span>
+<span id="L79"><a href="#L79" aria-label="第 79 行">  79</a> 				const result = await new Promise&lt;IteratorResult&lt;T&gt;&gt;((resolve) =&gt; this.waiting.enqueue(resolve));</span>
+<span id="L80"><a href="#L80" aria-label="第 80 行">  80</a> 				if (result.done) return;</span>
+<span id="L81"><a href="#L81" aria-label="第 81 行">  81</a> 				yield result.value;</span>
+<span id="L82"><a href="#L82" aria-label="第 82 行">  82</a> 			}</span>
+<span id="L83"><a href="#L83" aria-label="第 83 行">  83</a> 		}</span>
+<span id="L84"><a href="#L84" aria-label="第 84 行">  84</a> 	}</span>
+<span id="L85"><a href="#L85" aria-label="第 85 行">  85</a> </span>
+<span id="L86"><a href="#L86" aria-label="第 86 行">  86</a> 	result(): Promise&lt;R&gt; {</span>
+<span id="L87"><a href="#L87" aria-label="第 87 行">  87</a> 		return this.finalResultPromise;</span>
+<span id="L88"><a href="#L88" aria-label="第 88 行">  88</a> 	}</span>
+<span id="L89"><a href="#L89" aria-label="第 89 行">  89</a> }</span>
+<span id="L90"><a href="#L90" aria-label="第 90 行">  90</a> </span>
+<span id="L91"><a href="#L91" aria-label="第 91 行">  91</a> export class AssistantMessageEventStream extends EventStream&lt;AssistantMessageEvent, AssistantMessage&gt; {</span>
+<span id="L92"><a href="#L92" aria-label="第 92 行">  92</a> 	constructor() {</span>
+<span id="L93"><a href="#L93" aria-label="第 93 行">  93</a> 		super(</span>
+<span id="L94"><a href="#L94" aria-label="第 94 行">  94</a> 			(event) =&gt; event.type === &quot;done&quot; || event.type === &quot;error&quot;,</span>
+<span id="L95"><a href="#L95" aria-label="第 95 行">  95</a> 			(event) =&gt; {</span>
+<span id="L96"><a href="#L96" aria-label="第 96 行">  96</a> 				if (event.type === &quot;done&quot;) {</span>
+<span id="L97"><a href="#L97" aria-label="第 97 行">  97</a> 					return event.message;</span>
+<span id="L98"><a href="#L98" aria-label="第 98 行">  98</a> 				} else if (event.type === &quot;error&quot;) {</span>
+<span id="L99"><a href="#L99" aria-label="第 99 行">  99</a> 					return event.error;</span>
+<span id="L100"><a href="#L100" aria-label="第 100 行"> 100</a> 				}</span>
+<span id="L101"><a href="#L101" aria-label="第 101 行"> 101</a> 				throw new Error(&quot;Unexpected event type for final result&quot;);</span>
+<span id="L102"><a href="#L102" aria-label="第 102 行"> 102</a> 			},</span>
+<span id="L103"><a href="#L103" aria-label="第 103 行"> 103</a> 		);</span>
+<span id="L104"><a href="#L104" aria-label="第 104 行"> 104</a> 	}</span>
+<span id="L105"><a href="#L105" aria-label="第 105 行"> 105</a> }</span>
+<span id="L106"><a href="#L106" aria-label="第 106 行"> 106</a> </span>
+<span id="L107"><a href="#L107" aria-label="第 107 行"> 107</a> /** Factory function for AssistantMessageEventStream (for use in extensions) */</span>
+<span id="L108"><a href="#L108" aria-label="第 108 行"> 108</a> export function createAssistantMessageEventStream(): AssistantMessageEventStream {</span>
+<span id="L109"><a href="#L109" aria-label="第 109 行"> 109</a> 	return new AssistantMessageEventStream();</span>
+<span id="L110"><a href="#L110" aria-label="第 110 行"> 110</a> }</span></code></pre></body></html>

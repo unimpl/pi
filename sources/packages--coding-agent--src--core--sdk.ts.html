@@ -1,0 +1,410 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>packages/coding-agent/src/core/sdk.ts · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>packages/coding-agent/src/core/sdk.ts</h1><p>本地快照 · 36b60d2e8985 · 2026-09-23</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> import { join } from &quot;node:path&quot;;</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a> import { Agent, type AgentMessage, setDefaultStreamFn, type ThinkingLevel } from &quot;@earendil-works/pi-agent-core&quot;;</span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a> import { clampThinkingLevel, type Message, type Model, streamSimple } from &quot;@earendil-works/pi-ai/compat&quot;;</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a> import { getAgentDir } from &quot;../config.ts&quot;;</span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a> import { resolvePath } from &quot;../utils/paths.ts&quot;;</span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a> import { AgentSession } from &quot;./agent-session.ts&quot;;</span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a> import { formatNoModelsAvailableMessage } from &quot;./auth-guidance.ts&quot;;</span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a> import { DEFAULT_THINKING_LEVEL } from &quot;./defaults.ts&quot;;</span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a> import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from &quot;./extensions/index.ts&quot;;</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a> import { convertToLlm } from &quot;./messages.ts&quot;;</span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a> import { findInitialModel } from &quot;./model-resolver.ts&quot;;</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a> import { ModelRuntime } from &quot;./model-runtime.ts&quot;;</span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a> import { mergeProviderAttributionHeaders } from &quot;./provider-attribution.ts&quot;;</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a> import type { ResourceLoader } from &quot;./resource-loader.ts&quot;;</span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a> import { DefaultResourceLoader } from &quot;./resource-loader.ts&quot;;</span>
+<span id="L16"><a href="#L16" aria-label="第 16 行">  16</a> import { getDefaultSessionDir, SessionManager } from &quot;./session-manager.ts&quot;;</span>
+<span id="L17"><a href="#L17" aria-label="第 17 行">  17</a> import { SettingsManager } from &quot;./settings-manager.ts&quot;;</span>
+<span id="L18"><a href="#L18" aria-label="第 18 行">  18</a> import { time } from &quot;./timings.ts&quot;;</span>
+<span id="L19"><a href="#L19" aria-label="第 19 行">  19</a> import {</span>
+<span id="L20"><a href="#L20" aria-label="第 20 行">  20</a> 	createBashTool,</span>
+<span id="L21"><a href="#L21" aria-label="第 21 行">  21</a> 	createCodingTools,</span>
+<span id="L22"><a href="#L22" aria-label="第 22 行">  22</a> 	createEditTool,</span>
+<span id="L23"><a href="#L23" aria-label="第 23 行">  23</a> 	createFindTool,</span>
+<span id="L24"><a href="#L24" aria-label="第 24 行">  24</a> 	createGrepTool,</span>
+<span id="L25"><a href="#L25" aria-label="第 25 行">  25</a> 	createLsTool,</span>
+<span id="L26"><a href="#L26" aria-label="第 26 行">  26</a> 	createPowerShellTool,</span>
+<span id="L27"><a href="#L27" aria-label="第 27 行">  27</a> 	createReadOnlyTools,</span>
+<span id="L28"><a href="#L28" aria-label="第 28 行">  28</a> 	createReadTool,</span>
+<span id="L29"><a href="#L29" aria-label="第 29 行">  29</a> 	createWriteTool,</span>
+<span id="L30"><a href="#L30" aria-label="第 30 行">  30</a> 	type ToolName,</span>
+<span id="L31"><a href="#L31" aria-label="第 31 行">  31</a> 	withFileMutationQueue,</span>
+<span id="L32"><a href="#L32" aria-label="第 32 行">  32</a> } from &quot;./tools/index.ts&quot;;</span>
+<span id="L33"><a href="#L33" aria-label="第 33 行">  33</a> </span>
+<span id="L34"><a href="#L34" aria-label="第 34 行">  34</a> // Preserve the pre-0.81 fallback for extensions that construct Agent instances</span>
+<span id="L35"><a href="#L35" aria-label="第 35 行">  35</a> // or invoke low-level agent loops without supplying streamFn. Agent core remains</span>
+<span id="L36"><a href="#L36" aria-label="第 36 行">  36</a> // provider-agnostic and does not import pi-ai/compat itself.</span>
+<span id="L37"><a href="#L37" aria-label="第 37 行">  37</a> setDefaultStreamFn(streamSimple);</span>
+<span id="L38"><a href="#L38" aria-label="第 38 行">  38</a> </span>
+<span id="L39"><a href="#L39" aria-label="第 39 行">  39</a> export interface CreateAgentSessionOptions {</span>
+<span id="L40"><a href="#L40" aria-label="第 40 行">  40</a> 	/** Working directory for project-local discovery. Default: process.cwd() */</span>
+<span id="L41"><a href="#L41" aria-label="第 41 行">  41</a> 	cwd?: string;</span>
+<span id="L42"><a href="#L42" aria-label="第 42 行">  42</a> 	/** Global config directory. Default: ~/.pi/agent */</span>
+<span id="L43"><a href="#L43" aria-label="第 43 行">  43</a> 	agentDir?: string;</span>
+<span id="L44"><a href="#L44" aria-label="第 44 行">  44</a> </span>
+<span id="L45"><a href="#L45" aria-label="第 45 行">  45</a> 	/** Canonical model/auth runtime. Defaults to a runtime using agentDir/auth.json and models.json. */</span>
+<span id="L46"><a href="#L46" aria-label="第 46 行">  46</a> 	modelRuntime?: ModelRuntime;</span>
+<span id="L47"><a href="#L47" aria-label="第 47 行">  47</a> </span>
+<span id="L48"><a href="#L48" aria-label="第 48 行">  48</a> 	/** Model to use. Default: from settings, else first available */</span>
+<span id="L49"><a href="#L49" aria-label="第 49 行">  49</a> 	model?: Model&lt;any&gt;;</span>
+<span id="L50"><a href="#L50" aria-label="第 50 行">  50</a> 	/** Thinking level. Default: from settings, else &#x27;medium&#x27; (clamped to model capabilities) */</span>
+<span id="L51"><a href="#L51" aria-label="第 51 行">  51</a> 	thinkingLevel?: ThinkingLevel;</span>
+<span id="L52"><a href="#L52" aria-label="第 52 行">  52</a> 	/** Models available for cycling (Ctrl+P in interactive mode) */</span>
+<span id="L53"><a href="#L53" aria-label="第 53 行">  53</a> 	scopedModels?: Array&lt;{ model: Model&lt;any&gt;; thinkingLevel?: ThinkingLevel }&gt;;</span>
+<span id="L54"><a href="#L54" aria-label="第 54 行">  54</a> </span>
+<span id="L55"><a href="#L55" aria-label="第 55 行">  55</a> 	/**</span>
+<span id="L56"><a href="#L56" aria-label="第 56 行">  56</a> 	 * Optional default tool suppression mode when no explicit allowlist is provided.</span>
+<span id="L57"><a href="#L57" aria-label="第 57 行">  57</a> 	 *</span>
+<span id="L58"><a href="#L58" aria-label="第 58 行">  58</a> 	 * - &quot;all&quot;: start with no tools enabled</span>
+<span id="L59"><a href="#L59" aria-label="第 59 行">  59</a> 	 * - &quot;builtin&quot;: disable the default built-in tools (read, bash, edit, write)</span>
+<span id="L60"><a href="#L60" aria-label="第 60 行">  60</a> 	 *   but keep extension/custom tools enabled</span>
+<span id="L61"><a href="#L61" aria-label="第 61 行">  61</a> 	 */</span>
+<span id="L62"><a href="#L62" aria-label="第 62 行">  62</a> 	noTools?: &quot;all&quot; | &quot;builtin&quot;;</span>
+<span id="L63"><a href="#L63" aria-label="第 63 行">  63</a> 	/**</span>
+<span id="L64"><a href="#L64" aria-label="第 64 行">  64</a> 	 * Optional allowlist of tool names.</span>
+<span id="L65"><a href="#L65" aria-label="第 65 行">  65</a> 	 *</span>
+<span id="L66"><a href="#L66" aria-label="第 66 行">  66</a> 	 * When omitted, pi uses the `defaultTools` setting for the initial built-in</span>
+<span id="L67"><a href="#L67" aria-label="第 67 行">  67</a> 	 * selection when configured. Otherwise it enables the default built-in tools</span>
+<span id="L68"><a href="#L68" aria-label="第 68 行">  68</a> 	 * (read, bash, edit, write). Extension/custom tools remain enabled unless</span>
+<span id="L69"><a href="#L69" aria-label="第 69 行">  69</a> 	 * `noTools` changes that default. When provided, only the listed tool names are</span>
+<span id="L70"><a href="#L70" aria-label="第 70 行">  70</a> 	 * enabled.</span>
+<span id="L71"><a href="#L71" aria-label="第 71 行">  71</a> 	 */</span>
+<span id="L72"><a href="#L72" aria-label="第 72 行">  72</a> 	tools?: string[];</span>
+<span id="L73"><a href="#L73" aria-label="第 73 行">  73</a> 	/** Optional denylist of tool names to disable. Applies after `tools` when both are provided. */</span>
+<span id="L74"><a href="#L74" aria-label="第 74 行">  74</a> 	excludeTools?: string[];</span>
+<span id="L75"><a href="#L75" aria-label="第 75 行">  75</a> 	/** Custom tools to register (in addition to built-in tools). */</span>
+<span id="L76"><a href="#L76" aria-label="第 76 行">  76</a> 	customTools?: ToolDefinition[];</span>
+<span id="L77"><a href="#L77" aria-label="第 77 行">  77</a> </span>
+<span id="L78"><a href="#L78" aria-label="第 78 行">  78</a> 	/** Resource loader. When omitted, DefaultResourceLoader is used. */</span>
+<span id="L79"><a href="#L79" aria-label="第 79 行">  79</a> 	resourceLoader?: ResourceLoader;</span>
+<span id="L80"><a href="#L80" aria-label="第 80 行">  80</a> </span>
+<span id="L81"><a href="#L81" aria-label="第 81 行">  81</a> 	/** Session manager. Default: SessionManager.create(cwd) */</span>
+<span id="L82"><a href="#L82" aria-label="第 82 行">  82</a> 	sessionManager?: SessionManager;</span>
+<span id="L83"><a href="#L83" aria-label="第 83 行">  83</a> </span>
+<span id="L84"><a href="#L84" aria-label="第 84 行">  84</a> 	/** Settings manager. Default: SettingsManager.create(cwd, agentDir) */</span>
+<span id="L85"><a href="#L85" aria-label="第 85 行">  85</a> 	settingsManager?: SettingsManager;</span>
+<span id="L86"><a href="#L86" aria-label="第 86 行">  86</a> 	/** Session start event metadata for extension runtime startup. */</span>
+<span id="L87"><a href="#L87" aria-label="第 87 行">  87</a> 	sessionStartEvent?: SessionStartEvent;</span>
+<span id="L88"><a href="#L88" aria-label="第 88 行">  88</a> }</span>
+<span id="L89"><a href="#L89" aria-label="第 89 行">  89</a> </span>
+<span id="L90"><a href="#L90" aria-label="第 90 行">  90</a> /** Result from createAgentSession */</span>
+<span id="L91"><a href="#L91" aria-label="第 91 行">  91</a> export interface CreateAgentSessionResult {</span>
+<span id="L92"><a href="#L92" aria-label="第 92 行">  92</a> 	/** The created session */</span>
+<span id="L93"><a href="#L93" aria-label="第 93 行">  93</a> 	session: AgentSession;</span>
+<span id="L94"><a href="#L94" aria-label="第 94 行">  94</a> 	/** Extensions result (for UI context setup in interactive mode) */</span>
+<span id="L95"><a href="#L95" aria-label="第 95 行">  95</a> 	extensionsResult: LoadExtensionsResult;</span>
+<span id="L96"><a href="#L96" aria-label="第 96 行">  96</a> 	/** Warning if session was restored with a different model than saved */</span>
+<span id="L97"><a href="#L97" aria-label="第 97 行">  97</a> 	modelFallbackMessage?: string;</span>
+<span id="L98"><a href="#L98" aria-label="第 98 行">  98</a> }</span>
+<span id="L99"><a href="#L99" aria-label="第 99 行">  99</a> </span>
+<span id="L100"><a href="#L100" aria-label="第 100 行"> 100</a> // Re-exports</span>
+<span id="L101"><a href="#L101" aria-label="第 101 行"> 101</a> </span>
+<span id="L102"><a href="#L102" aria-label="第 102 行"> 102</a> export * from &quot;./agent-session-runtime.ts&quot;;</span>
+<span id="L103"><a href="#L103" aria-label="第 103 行"> 103</a> export type {</span>
+<span id="L104"><a href="#L104" aria-label="第 104 行"> 104</a> 	ExtensionAPI,</span>
+<span id="L105"><a href="#L105" aria-label="第 105 行"> 105</a> 	ExtensionCommandContext,</span>
+<span id="L106"><a href="#L106" aria-label="第 106 行"> 106</a> 	ExtensionContext,</span>
+<span id="L107"><a href="#L107" aria-label="第 107 行"> 107</a> 	ExtensionFactory,</span>
+<span id="L108"><a href="#L108" aria-label="第 108 行"> 108</a> 	InlineExtension,</span>
+<span id="L109"><a href="#L109" aria-label="第 109 行"> 109</a> 	SlashCommandInfo,</span>
+<span id="L110"><a href="#L110" aria-label="第 110 行"> 110</a> 	SlashCommandSource,</span>
+<span id="L111"><a href="#L111" aria-label="第 111 行"> 111</a> 	ToolDefinition,</span>
+<span id="L112"><a href="#L112" aria-label="第 112 行"> 112</a> } from &quot;./extensions/index.ts&quot;;</span>
+<span id="L113"><a href="#L113" aria-label="第 113 行"> 113</a> export type { PromptTemplate } from &quot;./prompt-templates.ts&quot;;</span>
+<span id="L114"><a href="#L114" aria-label="第 114 行"> 114</a> export type { Skill } from &quot;./skills.ts&quot;;</span>
+<span id="L115"><a href="#L115" aria-label="第 115 行"> 115</a> export type { Tool } from &quot;./tools/index.ts&quot;;</span>
+<span id="L116"><a href="#L116" aria-label="第 116 行"> 116</a> </span>
+<span id="L117"><a href="#L117" aria-label="第 117 行"> 117</a> export {</span>
+<span id="L118"><a href="#L118" aria-label="第 118 行"> 118</a> 	withFileMutationQueue,</span>
+<span id="L119"><a href="#L119" aria-label="第 119 行"> 119</a> 	// Tool factories (for custom cwd)</span>
+<span id="L120"><a href="#L120" aria-label="第 120 行"> 120</a> 	createCodingTools,</span>
+<span id="L121"><a href="#L121" aria-label="第 121 行"> 121</a> 	createReadOnlyTools,</span>
+<span id="L122"><a href="#L122" aria-label="第 122 行"> 122</a> 	createReadTool,</span>
+<span id="L123"><a href="#L123" aria-label="第 123 行"> 123</a> 	createBashTool,</span>
+<span id="L124"><a href="#L124" aria-label="第 124 行"> 124</a> 	createEditTool,</span>
+<span id="L125"><a href="#L125" aria-label="第 125 行"> 125</a> 	createWriteTool,</span>
+<span id="L126"><a href="#L126" aria-label="第 126 行"> 126</a> 	createGrepTool,</span>
+<span id="L127"><a href="#L127" aria-label="第 127 行"> 127</a> 	createFindTool,</span>
+<span id="L128"><a href="#L128" aria-label="第 128 行"> 128</a> 	createLsTool,</span>
+<span id="L129"><a href="#L129" aria-label="第 129 行"> 129</a> 	createPowerShellTool,</span>
+<span id="L130"><a href="#L130" aria-label="第 130 行"> 130</a> };</span>
+<span id="L131"><a href="#L131" aria-label="第 131 行"> 131</a> </span>
+<span id="L132"><a href="#L132" aria-label="第 132 行"> 132</a> // Helper Functions</span>
+<span id="L133"><a href="#L133" aria-label="第 133 行"> 133</a> </span>
+<span id="L134"><a href="#L134" aria-label="第 134 行"> 134</a> function getDefaultAgentDir(): string {</span>
+<span id="L135"><a href="#L135" aria-label="第 135 行"> 135</a> 	return getAgentDir();</span>
+<span id="L136"><a href="#L136" aria-label="第 136 行"> 136</a> }</span>
+<span id="L137"><a href="#L137" aria-label="第 137 行"> 137</a> </span>
+<span id="L138"><a href="#L138" aria-label="第 138 行"> 138</a> /**</span>
+<span id="L139"><a href="#L139" aria-label="第 139 行"> 139</a>  * Create an AgentSession with the specified options.</span>
+<span id="L140"><a href="#L140" aria-label="第 140 行"> 140</a>  *</span>
+<span id="L141"><a href="#L141" aria-label="第 141 行"> 141</a>  * @example</span>
+<span id="L142"><a href="#L142" aria-label="第 142 行"> 142</a>  * ```typescript</span>
+<span id="L143"><a href="#L143" aria-label="第 143 行"> 143</a>  * // Minimal - uses defaults</span>
+<span id="L144"><a href="#L144" aria-label="第 144 行"> 144</a>  * const { session } = await createAgentSession();</span>
+<span id="L145"><a href="#L145" aria-label="第 145 行"> 145</a>  *</span>
+<span id="L146"><a href="#L146" aria-label="第 146 行"> 146</a>  * // With explicit model</span>
+<span id="L147"><a href="#L147" aria-label="第 147 行"> 147</a>  * import { getModel } from &#x27;@earendil-works/pi-ai&#x27;;</span>
+<span id="L148"><a href="#L148" aria-label="第 148 行"> 148</a>  * const { session } = await createAgentSession({</span>
+<span id="L149"><a href="#L149" aria-label="第 149 行"> 149</a>  *   model: getModel(&#x27;anthropic&#x27;, &#x27;claude-opus-4-5&#x27;),</span>
+<span id="L150"><a href="#L150" aria-label="第 150 行"> 150</a>  *   thinkingLevel: &#x27;high&#x27;,</span>
+<span id="L151"><a href="#L151" aria-label="第 151 行"> 151</a>  * });</span>
+<span id="L152"><a href="#L152" aria-label="第 152 行"> 152</a>  *</span>
+<span id="L153"><a href="#L153" aria-label="第 153 行"> 153</a>  * // Continue previous session</span>
+<span id="L154"><a href="#L154" aria-label="第 154 行"> 154</a>  * const { session, modelFallbackMessage } = await createAgentSession({</span>
+<span id="L155"><a href="#L155" aria-label="第 155 行"> 155</a>  *   continueSession: true,</span>
+<span id="L156"><a href="#L156" aria-label="第 156 行"> 156</a>  * });</span>
+<span id="L157"><a href="#L157" aria-label="第 157 行"> 157</a>  *</span>
+<span id="L158"><a href="#L158" aria-label="第 158 行"> 158</a>  * // Full control</span>
+<span id="L159"><a href="#L159" aria-label="第 159 行"> 159</a>  * const loader = new DefaultResourceLoader({</span>
+<span id="L160"><a href="#L160" aria-label="第 160 行"> 160</a>  *   cwd: process.cwd(),</span>
+<span id="L161"><a href="#L161" aria-label="第 161 行"> 161</a>  *   agentDir: getAgentDir(),</span>
+<span id="L162"><a href="#L162" aria-label="第 162 行"> 162</a>  *   settingsManager: SettingsManager.create(),</span>
+<span id="L163"><a href="#L163" aria-label="第 163 行"> 163</a>  * });</span>
+<span id="L164"><a href="#L164" aria-label="第 164 行"> 164</a>  * await loader.reload();</span>
+<span id="L165"><a href="#L165" aria-label="第 165 行"> 165</a>  * const { session } = await createAgentSession({</span>
+<span id="L166"><a href="#L166" aria-label="第 166 行"> 166</a>  *   model: myModel,</span>
+<span id="L167"><a href="#L167" aria-label="第 167 行"> 167</a>  *   tools: [&quot;read&quot;, &quot;bash&quot;],</span>
+<span id="L168"><a href="#L168" aria-label="第 168 行"> 168</a>  *   resourceLoader: loader,</span>
+<span id="L169"><a href="#L169" aria-label="第 169 行"> 169</a>  *   sessionManager: SessionManager.inMemory(),</span>
+<span id="L170"><a href="#L170" aria-label="第 170 行"> 170</a>  * });</span>
+<span id="L171"><a href="#L171" aria-label="第 171 行"> 171</a>  * ```</span>
+<span id="L172"><a href="#L172" aria-label="第 172 行"> 172</a>  */</span>
+<span id="L173"><a href="#L173" aria-label="第 173 行"> 173</a> export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise&lt;CreateAgentSessionResult&gt; {</span>
+<span id="L174"><a href="#L174" aria-label="第 174 行"> 174</a> 	const cwd = resolvePath(options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd());</span>
+<span id="L175"><a href="#L175" aria-label="第 175 行"> 175</a> 	const agentDir = options.agentDir ? resolvePath(options.agentDir) : getDefaultAgentDir();</span>
+<span id="L176"><a href="#L176" aria-label="第 176 行"> 176</a> 	let resourceLoader = options.resourceLoader;</span>
+<span id="L177"><a href="#L177" aria-label="第 177 行"> 177</a> </span>
+<span id="L178"><a href="#L178" aria-label="第 178 行"> 178</a> 	const authPath = options.agentDir ? join(agentDir, &quot;auth.json&quot;) : undefined;</span>
+<span id="L179"><a href="#L179" aria-label="第 179 行"> 179</a> 	const modelsPath = options.agentDir ? join(agentDir, &quot;models.json&quot;) : undefined;</span>
+<span id="L180"><a href="#L180" aria-label="第 180 行"> 180</a> 	const modelRuntime = options.modelRuntime ?? (await ModelRuntime.create({ authPath, modelsPath }));</span>
+<span id="L181"><a href="#L181" aria-label="第 181 行"> 181</a> </span>
+<span id="L182"><a href="#L182" aria-label="第 182 行"> 182</a> 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);</span>
+<span id="L183"><a href="#L183" aria-label="第 183 行"> 183</a> 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));</span>
+<span id="L184"><a href="#L184" aria-label="第 184 行"> 184</a> </span>
+<span id="L185"><a href="#L185" aria-label="第 185 行"> 185</a> 	if (!resourceLoader) {</span>
+<span id="L186"><a href="#L186" aria-label="第 186 行"> 186</a> 		resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });</span>
+<span id="L187"><a href="#L187" aria-label="第 187 行"> 187</a> 		await resourceLoader.reload();</span>
+<span id="L188"><a href="#L188" aria-label="第 188 行"> 188</a> 		time(&quot;resourceLoader.reload&quot;);</span>
+<span id="L189"><a href="#L189" aria-label="第 189 行"> 189</a> 	}</span>
+<span id="L190"><a href="#L190" aria-label="第 190 行"> 190</a> </span>
+<span id="L191"><a href="#L191" aria-label="第 191 行"> 191</a> 	// Check if session has existing data to restore</span>
+<span id="L192"><a href="#L192" aria-label="第 192 行"> 192</a> 	const existingSession = sessionManager.buildSessionContext();</span>
+<span id="L193"><a href="#L193" aria-label="第 193 行"> 193</a> 	const hasExistingSession = existingSession.messages.length &gt; 0;</span>
+<span id="L194"><a href="#L194" aria-label="第 194 行"> 194</a> 	const hasThinkingEntry = sessionManager.getBranch().some((entry) =&gt; entry.type === &quot;thinking_level_change&quot;);</span>
+<span id="L195"><a href="#L195" aria-label="第 195 行"> 195</a> </span>
+<span id="L196"><a href="#L196" aria-label="第 196 行"> 196</a> 	let model = options.model;</span>
+<span id="L197"><a href="#L197" aria-label="第 197 行"> 197</a> 	let modelFallbackMessage: string | undefined;</span>
+<span id="L198"><a href="#L198" aria-label="第 198 行"> 198</a> </span>
+<span id="L199"><a href="#L199" aria-label="第 199 行"> 199</a> 	// If session has data, try to restore model from it</span>
+<span id="L200"><a href="#L200" aria-label="第 200 行"> 200</a> 	if (!model &amp;&amp; hasExistingSession &amp;&amp; existingSession.model) {</span>
+<span id="L201"><a href="#L201" aria-label="第 201 行"> 201</a> 		const restoredModel = modelRuntime.getModel(existingSession.model.provider, existingSession.model.modelId);</span>
+<span id="L202"><a href="#L202" aria-label="第 202 行"> 202</a> 		if (restoredModel &amp;&amp; modelRuntime.hasConfiguredAuth(restoredModel.provider)) {</span>
+<span id="L203"><a href="#L203" aria-label="第 203 行"> 203</a> 			model = restoredModel;</span>
+<span id="L204"><a href="#L204" aria-label="第 204 行"> 204</a> 		}</span>
+<span id="L205"><a href="#L205" aria-label="第 205 行"> 205</a> 		if (!model) {</span>
+<span id="L206"><a href="#L206" aria-label="第 206 行"> 206</a> 			modelFallbackMessage = `Could not restore model ${existingSession.model.provider}/${existingSession.model.modelId}`;</span>
+<span id="L207"><a href="#L207" aria-label="第 207 行"> 207</a> 		}</span>
+<span id="L208"><a href="#L208" aria-label="第 208 行"> 208</a> 	}</span>
+<span id="L209"><a href="#L209" aria-label="第 209 行"> 209</a> </span>
+<span id="L210"><a href="#L210" aria-label="第 210 行"> 210</a> 	// If still no model, use findInitialModel (checks settings default, then provider defaults)</span>
+<span id="L211"><a href="#L211" aria-label="第 211 行"> 211</a> 	if (!model) {</span>
+<span id="L212"><a href="#L212" aria-label="第 212 行"> 212</a> 		const result = await findInitialModel({</span>
+<span id="L213"><a href="#L213" aria-label="第 213 行"> 213</a> 			scopedModels: [],</span>
+<span id="L214"><a href="#L214" aria-label="第 214 行"> 214</a> 			isContinuing: hasExistingSession,</span>
+<span id="L215"><a href="#L215" aria-label="第 215 行"> 215</a> 			defaultProvider: settingsManager.getDefaultProvider(),</span>
+<span id="L216"><a href="#L216" aria-label="第 216 行"> 216</a> 			defaultModelId: settingsManager.getDefaultModel(),</span>
+<span id="L217"><a href="#L217" aria-label="第 217 行"> 217</a> 			defaultThinkingLevel: settingsManager.getDefaultThinkingLevel(),</span>
+<span id="L218"><a href="#L218" aria-label="第 218 行"> 218</a> 			modelThinkingLevels: settingsManager.getAllModelThinkingLevels(),</span>
+<span id="L219"><a href="#L219" aria-label="第 219 行"> 219</a> 			modelRuntime,</span>
+<span id="L220"><a href="#L220" aria-label="第 220 行"> 220</a> 		});</span>
+<span id="L221"><a href="#L221" aria-label="第 221 行"> 221</a> 		model = result.model;</span>
+<span id="L222"><a href="#L222" aria-label="第 222 行"> 222</a> 		if (!model) {</span>
+<span id="L223"><a href="#L223" aria-label="第 223 行"> 223</a> 			modelFallbackMessage = formatNoModelsAvailableMessage();</span>
+<span id="L224"><a href="#L224" aria-label="第 224 行"> 224</a> 		} else if (modelFallbackMessage) {</span>
+<span id="L225"><a href="#L225" aria-label="第 225 行"> 225</a> 			modelFallbackMessage += `. Using ${model.provider}/${model.id}`;</span>
+<span id="L226"><a href="#L226" aria-label="第 226 行"> 226</a> 		}</span>
+<span id="L227"><a href="#L227" aria-label="第 227 行"> 227</a> 	}</span>
+<span id="L228"><a href="#L228" aria-label="第 228 行"> 228</a> </span>
+<span id="L229"><a href="#L229" aria-label="第 229 行"> 229</a> 	let thinkingLevel = options.thinkingLevel;</span>
+<span id="L230"><a href="#L230" aria-label="第 230 行"> 230</a> </span>
+<span id="L231"><a href="#L231" aria-label="第 231 行"> 231</a> 	// If session has data, restore thinking level from it</span>
+<span id="L232"><a href="#L232" aria-label="第 232 行"> 232</a> 	if (thinkingLevel === undefined &amp;&amp; hasExistingSession) {</span>
+<span id="L233"><a href="#L233" aria-label="第 233 行"> 233</a> 		thinkingLevel = hasThinkingEntry</span>
+<span id="L234"><a href="#L234" aria-label="第 234 行"> 234</a> 			? (existingSession.thinkingLevel as ThinkingLevel)</span>
+<span id="L235"><a href="#L235" aria-label="第 235 行"> 235</a> 			: (settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL);</span>
+<span id="L236"><a href="#L236" aria-label="第 236 行"> 236</a> 	}</span>
+<span id="L237"><a href="#L237" aria-label="第 237 行"> 237</a> </span>
+<span id="L238"><a href="#L238" aria-label="第 238 行"> 238</a> 	// Fall back to per-model override, then global default</span>
+<span id="L239"><a href="#L239" aria-label="第 239 行"> 239</a> 	if (thinkingLevel === undefined &amp;&amp; model) {</span>
+<span id="L240"><a href="#L240" aria-label="第 240 行"> 240</a> 		const perModel = settingsManager.getModelThinkingLevel(model.provider, model.id);</span>
+<span id="L241"><a href="#L241" aria-label="第 241 行"> 241</a> 		if (perModel) {</span>
+<span id="L242"><a href="#L242" aria-label="第 242 行"> 242</a> 			thinkingLevel = perModel;</span>
+<span id="L243"><a href="#L243" aria-label="第 243 行"> 243</a> 		}</span>
+<span id="L244"><a href="#L244" aria-label="第 244 行"> 244</a> 	}</span>
+<span id="L245"><a href="#L245" aria-label="第 245 行"> 245</a> 	if (thinkingLevel === undefined) {</span>
+<span id="L246"><a href="#L246" aria-label="第 246 行"> 246</a> 		thinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;</span>
+<span id="L247"><a href="#L247" aria-label="第 247 行"> 247</a> 	}</span>
+<span id="L248"><a href="#L248" aria-label="第 248 行"> 248</a> </span>
+<span id="L249"><a href="#L249" aria-label="第 249 行"> 249</a> 	// Clamp to model capabilities</span>
+<span id="L250"><a href="#L250" aria-label="第 250 行"> 250</a> 	if (!model) {</span>
+<span id="L251"><a href="#L251" aria-label="第 251 行"> 251</a> 		thinkingLevel = &quot;off&quot;;</span>
+<span id="L252"><a href="#L252" aria-label="第 252 行"> 252</a> 	} else {</span>
+<span id="L253"><a href="#L253" aria-label="第 253 行"> 253</a> 		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;</span>
+<span id="L254"><a href="#L254" aria-label="第 254 行"> 254</a> 	}</span>
+<span id="L255"><a href="#L255" aria-label="第 255 行"> 255</a> </span>
+<span id="L256"><a href="#L256" aria-label="第 256 行"> 256</a> 	const defaultActiveToolNames: ToolName[] = [&quot;read&quot;, &quot;bash&quot;, &quot;edit&quot;, &quot;write&quot;];</span>
+<span id="L257"><a href="#L257" aria-label="第 257 行"> 257</a> 	const configuredDefaultToolNames = settingsManager.getDefaultTools();</span>
+<span id="L258"><a href="#L258" aria-label="第 258 行"> 258</a> 	const allowedToolNames = options.tools ?? (options.noTools === &quot;all&quot; ? [] : undefined);</span>
+<span id="L259"><a href="#L259" aria-label="第 259 行"> 259</a> 	const excludedToolNames = options.excludeTools;</span>
+<span id="L260"><a href="#L260" aria-label="第 260 行"> 260</a> 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;</span>
+<span id="L261"><a href="#L261" aria-label="第 261 行"> 261</a> 	const initialActiveToolNames = (</span>
+<span id="L262"><a href="#L262" aria-label="第 262 行"> 262</a> 		options.tools ?? (options.noTools ? [] : (configuredDefaultToolNames ?? defaultActiveToolNames))</span>
+<span id="L263"><a href="#L263" aria-label="第 263 行"> 263</a> 	).filter((name) =&gt; !excludedToolNameSet?.has(name));</span>
+<span id="L264"><a href="#L264" aria-label="第 264 行"> 264</a> </span>
+<span id="L265"><a href="#L265" aria-label="第 265 行"> 265</a> 	let agent: Agent;</span>
+<span id="L266"><a href="#L266" aria-label="第 266 行"> 266</a> </span>
+<span id="L267"><a href="#L267" aria-label="第 267 行"> 267</a> 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)</span>
+<span id="L268"><a href="#L268" aria-label="第 268 行"> 268</a> 	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] =&gt; {</span>
+<span id="L269"><a href="#L269" aria-label="第 269 行"> 269</a> 		const converted = convertToLlm(messages);</span>
+<span id="L270"><a href="#L270" aria-label="第 270 行"> 270</a> 		// Check setting dynamically so mid-session changes take effect</span>
+<span id="L271"><a href="#L271" aria-label="第 271 行"> 271</a> 		if (!settingsManager.getBlockImages()) {</span>
+<span id="L272"><a href="#L272" aria-label="第 272 行"> 272</a> 			return converted;</span>
+<span id="L273"><a href="#L273" aria-label="第 273 行"> 273</a> 		}</span>
+<span id="L274"><a href="#L274" aria-label="第 274 行"> 274</a> 		// Filter out ImageContent from all messages, replacing with text placeholder</span>
+<span id="L275"><a href="#L275" aria-label="第 275 行"> 275</a> 		return converted.map((msg) =&gt; {</span>
+<span id="L276"><a href="#L276" aria-label="第 276 行"> 276</a> 			if (msg.role === &quot;user&quot; || msg.role === &quot;toolResult&quot;) {</span>
+<span id="L277"><a href="#L277" aria-label="第 277 行"> 277</a> 				const content = msg.content;</span>
+<span id="L278"><a href="#L278" aria-label="第 278 行"> 278</a> 				if (Array.isArray(content)) {</span>
+<span id="L279"><a href="#L279" aria-label="第 279 行"> 279</a> 					const hasImages = content.some((c) =&gt; c.type === &quot;image&quot;);</span>
+<span id="L280"><a href="#L280" aria-label="第 280 行"> 280</a> 					if (hasImages) {</span>
+<span id="L281"><a href="#L281" aria-label="第 281 行"> 281</a> 						const filteredContent = content</span>
+<span id="L282"><a href="#L282" aria-label="第 282 行"> 282</a> 							.map((c) =&gt;</span>
+<span id="L283"><a href="#L283" aria-label="第 283 行"> 283</a> 								c.type === &quot;image&quot; ? { type: &quot;text&quot; as const, text: &quot;Image reading is disabled.&quot; } : c,</span>
+<span id="L284"><a href="#L284" aria-label="第 284 行"> 284</a> 							)</span>
+<span id="L285"><a href="#L285" aria-label="第 285 行"> 285</a> 							.filter(</span>
+<span id="L286"><a href="#L286" aria-label="第 286 行"> 286</a> 								(c, i, arr) =&gt;</span>
+<span id="L287"><a href="#L287" aria-label="第 287 行"> 287</a> 									// Dedupe consecutive &quot;Image reading is disabled.&quot; texts</span>
+<span id="L288"><a href="#L288" aria-label="第 288 行"> 288</a> 									!(</span>
+<span id="L289"><a href="#L289" aria-label="第 289 行"> 289</a> 										c.type === &quot;text&quot; &amp;&amp;</span>
+<span id="L290"><a href="#L290" aria-label="第 290 行"> 290</a> 										c.text === &quot;Image reading is disabled.&quot; &amp;&amp;</span>
+<span id="L291"><a href="#L291" aria-label="第 291 行"> 291</a> 										i &gt; 0 &amp;&amp;</span>
+<span id="L292"><a href="#L292" aria-label="第 292 行"> 292</a> 										arr[i - 1].type === &quot;text&quot; &amp;&amp;</span>
+<span id="L293"><a href="#L293" aria-label="第 293 行"> 293</a> 										(arr[i - 1] as { type: &quot;text&quot;; text: string }).text === &quot;Image reading is disabled.&quot;</span>
+<span id="L294"><a href="#L294" aria-label="第 294 行"> 294</a> 									),</span>
+<span id="L295"><a href="#L295" aria-label="第 295 行"> 295</a> 							);</span>
+<span id="L296"><a href="#L296" aria-label="第 296 行"> 296</a> 						return { ...msg, content: filteredContent };</span>
+<span id="L297"><a href="#L297" aria-label="第 297 行"> 297</a> 					}</span>
+<span id="L298"><a href="#L298" aria-label="第 298 行"> 298</a> 				}</span>
+<span id="L299"><a href="#L299" aria-label="第 299 行"> 299</a> 			}</span>
+<span id="L300"><a href="#L300" aria-label="第 300 行"> 300</a> 			return msg;</span>
+<span id="L301"><a href="#L301" aria-label="第 301 行"> 301</a> 		});</span>
+<span id="L302"><a href="#L302" aria-label="第 302 行"> 302</a> 	};</span>
+<span id="L303"><a href="#L303" aria-label="第 303 行"> 303</a> </span>
+<span id="L304"><a href="#L304" aria-label="第 304 行"> 304</a> 	const extensionRunnerRef: { current?: ExtensionRunner } = {};</span>
+<span id="L305"><a href="#L305" aria-label="第 305 行"> 305</a> </span>
+<span id="L306"><a href="#L306" aria-label="第 306 行"> 306</a> 	agent = new Agent({</span>
+<span id="L307"><a href="#L307" aria-label="第 307 行"> 307</a> 		initialState: {</span>
+<span id="L308"><a href="#L308" aria-label="第 308 行"> 308</a> 			systemPrompt: &quot;&quot;,</span>
+<span id="L309"><a href="#L309" aria-label="第 309 行"> 309</a> 			model,</span>
+<span id="L310"><a href="#L310" aria-label="第 310 行"> 310</a> 			thinkingLevel,</span>
+<span id="L311"><a href="#L311" aria-label="第 311 行"> 311</a> 			tools: [],</span>
+<span id="L312"><a href="#L312" aria-label="第 312 行"> 312</a> 		},</span>
+<span id="L313"><a href="#L313" aria-label="第 313 行"> 313</a> 		convertToLlm: convertToLlmWithBlockImages,</span>
+<span id="L314"><a href="#L314" aria-label="第 314 行"> 314</a> 		streamFn: async (model, context, options) =&gt; {</span>
+<span id="L315"><a href="#L315" aria-label="第 315 行"> 315</a> 			const providerRetrySettings = settingsManager.getProviderRetrySettings();</span>
+<span id="L316"><a href="#L316" aria-label="第 316 行"> 316</a> 			const httpIdleTimeoutMs = settingsManager.getHttpIdleTimeoutMs();</span>
+<span id="L317"><a href="#L317" aria-label="第 317 行"> 317</a> 			// SDKs treat timeout=0 as 0ms (immediate timeout), not &quot;no timeout&quot;.</span>
+<span id="L318"><a href="#L318" aria-label="第 318 行"> 318</a> 			// Use max int32 to effectively disable the timeout.</span>
+<span id="L319"><a href="#L319" aria-label="第 319 行"> 319</a> 			const effectiveTimeoutMs = httpIdleTimeoutMs === 0 ? 2147483647 : httpIdleTimeoutMs;</span>
+<span id="L320"><a href="#L320" aria-label="第 320 行"> 320</a> 			const timeoutMs = options?.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs;</span>
+<span id="L321"><a href="#L321" aria-label="第 321 行"> 321</a> 			const websocketConnectTimeoutMs =</span>
+<span id="L322"><a href="#L322" aria-label="第 322 行"> 322</a> 				options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();</span>
+<span id="L323"><a href="#L323" aria-label="第 323 行"> 323</a> 			const headerRunner = extensionRunnerRef.current;</span>
+<span id="L324"><a href="#L324" aria-label="第 324 行"> 324</a> 			return modelRuntime.streamSimple(model, context, {</span>
+<span id="L325"><a href="#L325" aria-label="第 325 行"> 325</a> 				...options,</span>
+<span id="L326"><a href="#L326" aria-label="第 326 行"> 326</a> 				timeoutMs,</span>
+<span id="L327"><a href="#L327" aria-label="第 327 行"> 327</a> 				websocketConnectTimeoutMs,</span>
+<span id="L328"><a href="#L328" aria-label="第 328 行"> 328</a> 				maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,</span>
+<span id="L329"><a href="#L329" aria-label="第 329 行"> 329</a> 				maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,</span>
+<span id="L330"><a href="#L330" aria-label="第 330 行"> 330</a> 				transformHeaders: async (requestHeaders) =&gt; {</span>
+<span id="L331"><a href="#L331" aria-label="第 331 行"> 331</a> 					const headers = mergeProviderAttributionHeaders(</span>
+<span id="L332"><a href="#L332" aria-label="第 332 行"> 332</a> 						model,</span>
+<span id="L333"><a href="#L333" aria-label="第 333 行"> 333</a> 						settingsManager,</span>
+<span id="L334"><a href="#L334" aria-label="第 334 行"> 334</a> 						options?.sessionId,</span>
+<span id="L335"><a href="#L335" aria-label="第 335 行"> 335</a> 						requestHeaders,</span>
+<span id="L336"><a href="#L336" aria-label="第 336 行"> 336</a> 					);</span>
+<span id="L337"><a href="#L337" aria-label="第 337 行"> 337</a> 					return headerRunner?.hasHandlers(&quot;before_provider_headers&quot;)</span>
+<span id="L338"><a href="#L338" aria-label="第 338 行"> 338</a> 						? headerRunner.emitBeforeProviderHeaders(headers ?? {})</span>
+<span id="L339"><a href="#L339" aria-label="第 339 行"> 339</a> 						: (headers ?? {});</span>
+<span id="L340"><a href="#L340" aria-label="第 340 行"> 340</a> 				},</span>
+<span id="L341"><a href="#L341" aria-label="第 341 行"> 341</a> 			});</span>
+<span id="L342"><a href="#L342" aria-label="第 342 行"> 342</a> 		},</span>
+<span id="L343"><a href="#L343" aria-label="第 343 行"> 343</a> 		onPayload: async (payload, _model) =&gt; {</span>
+<span id="L344"><a href="#L344" aria-label="第 344 行"> 344</a> 			const runner = extensionRunnerRef.current;</span>
+<span id="L345"><a href="#L345" aria-label="第 345 行"> 345</a> 			if (!runner?.hasHandlers(&quot;before_provider_request&quot;)) {</span>
+<span id="L346"><a href="#L346" aria-label="第 346 行"> 346</a> 				return payload;</span>
+<span id="L347"><a href="#L347" aria-label="第 347 行"> 347</a> 			}</span>
+<span id="L348"><a href="#L348" aria-label="第 348 行"> 348</a> 			return runner.emitBeforeProviderRequest(payload);</span>
+<span id="L349"><a href="#L349" aria-label="第 349 行"> 349</a> 		},</span>
+<span id="L350"><a href="#L350" aria-label="第 350 行"> 350</a> 		onResponse: async (response, _model) =&gt; {</span>
+<span id="L351"><a href="#L351" aria-label="第 351 行"> 351</a> 			const runner = extensionRunnerRef.current;</span>
+<span id="L352"><a href="#L352" aria-label="第 352 行"> 352</a> 			if (!runner?.hasHandlers(&quot;after_provider_response&quot;)) {</span>
+<span id="L353"><a href="#L353" aria-label="第 353 行"> 353</a> 				return;</span>
+<span id="L354"><a href="#L354" aria-label="第 354 行"> 354</a> 			}</span>
+<span id="L355"><a href="#L355" aria-label="第 355 行"> 355</a> 			await runner.emit({</span>
+<span id="L356"><a href="#L356" aria-label="第 356 行"> 356</a> 				type: &quot;after_provider_response&quot;,</span>
+<span id="L357"><a href="#L357" aria-label="第 357 行"> 357</a> 				status: response.status,</span>
+<span id="L358"><a href="#L358" aria-label="第 358 行"> 358</a> 				headers: response.headers,</span>
+<span id="L359"><a href="#L359" aria-label="第 359 行"> 359</a> 			});</span>
+<span id="L360"><a href="#L360" aria-label="第 360 行"> 360</a> 		},</span>
+<span id="L361"><a href="#L361" aria-label="第 361 行"> 361</a> 		sessionId: sessionManager.getSessionId(),</span>
+<span id="L362"><a href="#L362" aria-label="第 362 行"> 362</a> 		transformContext: async (messages) =&gt; {</span>
+<span id="L363"><a href="#L363" aria-label="第 363 行"> 363</a> 			const runner = extensionRunnerRef.current;</span>
+<span id="L364"><a href="#L364" aria-label="第 364 行"> 364</a> 			if (!runner) return messages;</span>
+<span id="L365"><a href="#L365" aria-label="第 365 行"> 365</a> 			return runner.emitContext(messages);</span>
+<span id="L366"><a href="#L366" aria-label="第 366 行"> 366</a> 		},</span>
+<span id="L367"><a href="#L367" aria-label="第 367 行"> 367</a> 		steeringMode: settingsManager.getSteeringMode(),</span>
+<span id="L368"><a href="#L368" aria-label="第 368 行"> 368</a> 		followUpMode: settingsManager.getFollowUpMode(),</span>
+<span id="L369"><a href="#L369" aria-label="第 369 行"> 369</a> 		transport: settingsManager.getTransport(),</span>
+<span id="L370"><a href="#L370" aria-label="第 370 行"> 370</a> 		thinkingBudgets: settingsManager.getThinkingBudgets(),</span>
+<span id="L371"><a href="#L371" aria-label="第 371 行"> 371</a> 		maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,</span>
+<span id="L372"><a href="#L372" aria-label="第 372 行"> 372</a> 	});</span>
+<span id="L373"><a href="#L373" aria-label="第 373 行"> 373</a> </span>
+<span id="L374"><a href="#L374" aria-label="第 374 行"> 374</a> 	// Restore messages if session has existing data</span>
+<span id="L375"><a href="#L375" aria-label="第 375 行"> 375</a> 	if (hasExistingSession) {</span>
+<span id="L376"><a href="#L376" aria-label="第 376 行"> 376</a> 		agent.state.messages = existingSession.messages;</span>
+<span id="L377"><a href="#L377" aria-label="第 377 行"> 377</a> 		if (!hasThinkingEntry) {</span>
+<span id="L378"><a href="#L378" aria-label="第 378 行"> 378</a> 			sessionManager.appendThinkingLevelChange(thinkingLevel);</span>
+<span id="L379"><a href="#L379" aria-label="第 379 行"> 379</a> 		}</span>
+<span id="L380"><a href="#L380" aria-label="第 380 行"> 380</a> 	} else {</span>
+<span id="L381"><a href="#L381" aria-label="第 381 行"> 381</a> 		// Save initial model and thinking level for new sessions so they can be restored on resume</span>
+<span id="L382"><a href="#L382" aria-label="第 382 行"> 382</a> 		if (model) {</span>
+<span id="L383"><a href="#L383" aria-label="第 383 行"> 383</a> 			sessionManager.appendModelChange(model.provider, model.id);</span>
+<span id="L384"><a href="#L384" aria-label="第 384 行"> 384</a> 		}</span>
+<span id="L385"><a href="#L385" aria-label="第 385 行"> 385</a> 		sessionManager.appendThinkingLevelChange(thinkingLevel);</span>
+<span id="L386"><a href="#L386" aria-label="第 386 行"> 386</a> 	}</span>
+<span id="L387"><a href="#L387" aria-label="第 387 行"> 387</a> </span>
+<span id="L388"><a href="#L388" aria-label="第 388 行"> 388</a> 	const session = new AgentSession({</span>
+<span id="L389"><a href="#L389" aria-label="第 389 行"> 389</a> 		agent,</span>
+<span id="L390"><a href="#L390" aria-label="第 390 行"> 390</a> 		sessionManager,</span>
+<span id="L391"><a href="#L391" aria-label="第 391 行"> 391</a> 		settingsManager,</span>
+<span id="L392"><a href="#L392" aria-label="第 392 行"> 392</a> 		cwd,</span>
+<span id="L393"><a href="#L393" aria-label="第 393 行"> 393</a> 		scopedModels: options.scopedModels,</span>
+<span id="L394"><a href="#L394" aria-label="第 394 行"> 394</a> 		resourceLoader,</span>
+<span id="L395"><a href="#L395" aria-label="第 395 行"> 395</a> 		customTools: options.customTools,</span>
+<span id="L396"><a href="#L396" aria-label="第 396 行"> 396</a> 		modelRuntime,</span>
+<span id="L397"><a href="#L397" aria-label="第 397 行"> 397</a> 		initialActiveToolNames,</span>
+<span id="L398"><a href="#L398" aria-label="第 398 行"> 398</a> 		allowedToolNames,</span>
+<span id="L399"><a href="#L399" aria-label="第 399 行"> 399</a> 		excludedToolNames,</span>
+<span id="L400"><a href="#L400" aria-label="第 400 行"> 400</a> 		extensionRunnerRef,</span>
+<span id="L401"><a href="#L401" aria-label="第 401 行"> 401</a> 		sessionStartEvent: options.sessionStartEvent,</span>
+<span id="L402"><a href="#L402" aria-label="第 402 行"> 402</a> 	});</span>
+<span id="L403"><a href="#L403" aria-label="第 403 行"> 403</a> 	const extensionsResult = resourceLoader.getExtensions();</span>
+<span id="L404"><a href="#L404" aria-label="第 404 行"> 404</a> </span>
+<span id="L405"><a href="#L405" aria-label="第 405 行"> 405</a> 	return {</span>
+<span id="L406"><a href="#L406" aria-label="第 406 行"> 406</a> 		session,</span>
+<span id="L407"><a href="#L407" aria-label="第 407 行"> 407</a> 		extensionsResult,</span>
+<span id="L408"><a href="#L408" aria-label="第 408 行"> 408</a> 		modelFallbackMessage,</span>
+<span id="L409"><a href="#L409" aria-label="第 409 行"> 409</a> 	};</span>
+<span id="L410"><a href="#L410" aria-label="第 410 行"> 410</a> }</span></code></pre></body></html>

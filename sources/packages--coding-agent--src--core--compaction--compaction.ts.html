@@ -1,0 +1,1024 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>packages/coding-agent/src/core/compaction/compaction.ts · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>packages/coding-agent/src/core/compaction/compaction.ts</h1><p>本地快照 · 36b60d2e8985 · 2026-09-23</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> /**</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a>  * Context compaction for long sessions.</span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a>  *</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a>  * Pure functions for compaction logic. The session manager handles I/O,</span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a>  * and after compaction the session is reloaded.</span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a>  */</span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a> </span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a> import type { AgentMessage, StreamFn, ThinkingLevel } from &quot;@earendil-works/pi-agent-core&quot;;</span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a> import {</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a> 	contentText,</span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a> 	normalizeContext,</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a> 	type RetryCallbacks,</span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a> 	type RetryPolicy,</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a> 	retryAssistantCall,</span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a> 	uuidv7,</span>
+<span id="L16"><a href="#L16" aria-label="第 16 行">  16</a> } from &quot;@earendil-works/pi-ai&quot;;</span>
+<span id="L17"><a href="#L17" aria-label="第 17 行">  17</a> import type {</span>
+<span id="L18"><a href="#L18" aria-label="第 18 行">  18</a> 	AssistantMessage,</span>
+<span id="L19"><a href="#L19" aria-label="第 19 行">  19</a> 	Model,</span>
+<span id="L20"><a href="#L20" aria-label="第 20 行">  20</a> 	SimpleStreamOptions,</span>
+<span id="L21"><a href="#L21" aria-label="第 21 行">  21</a> 	TranscriptContext,</span>
+<span id="L22"><a href="#L22" aria-label="第 22 行">  22</a> 	Usage,</span>
+<span id="L23"><a href="#L23" aria-label="第 23 行">  23</a> } from &quot;@earendil-works/pi-ai/compat&quot;;</span>
+<span id="L24"><a href="#L24" aria-label="第 24 行">  24</a> import { completeSimple } from &quot;@earendil-works/pi-ai/compat&quot;;</span>
+<span id="L25"><a href="#L25" aria-label="第 25 行">  25</a> import { convertToLlm } from &quot;../messages.ts&quot;;</span>
+<span id="L26"><a href="#L26" aria-label="第 26 行">  26</a> import {</span>
+<span id="L27"><a href="#L27" aria-label="第 27 行">  27</a> 	buildSessionContext,</span>
+<span id="L28"><a href="#L28" aria-label="第 28 行">  28</a> 	type CompactionEntry,</span>
+<span id="L29"><a href="#L29" aria-label="第 29 行">  29</a> 	type SessionEntry,</span>
+<span id="L30"><a href="#L30" aria-label="第 30 行">  30</a> 	sessionEntryToContextMessages,</span>
+<span id="L31"><a href="#L31" aria-label="第 31 行">  31</a> } from &quot;../session-manager.ts&quot;;</span>
+<span id="L32"><a href="#L32" aria-label="第 32 行">  32</a> import {</span>
+<span id="L33"><a href="#L33" aria-label="第 33 行">  33</a> 	computeFileLists,</span>
+<span id="L34"><a href="#L34" aria-label="第 34 行">  34</a> 	createFileOps,</span>
+<span id="L35"><a href="#L35" aria-label="第 35 行">  35</a> 	extractFileOpsFromMessage,</span>
+<span id="L36"><a href="#L36" aria-label="第 36 行">  36</a> 	type FileOperations,</span>
+<span id="L37"><a href="#L37" aria-label="第 37 行">  37</a> 	formatFileOperations,</span>
+<span id="L38"><a href="#L38" aria-label="第 38 行">  38</a> 	SUMMARIZATION_SYSTEM_PROMPT,</span>
+<span id="L39"><a href="#L39" aria-label="第 39 行">  39</a> 	serializeConversation,</span>
+<span id="L40"><a href="#L40" aria-label="第 40 行">  40</a> } from &quot;./utils.ts&quot;;</span>
+<span id="L41"><a href="#L41" aria-label="第 41 行">  41</a> </span>
+<span id="L42"><a href="#L42" aria-label="第 42 行">  42</a> // ============================================================================</span>
+<span id="L43"><a href="#L43" aria-label="第 43 行">  43</a> // File Operation Tracking</span>
+<span id="L44"><a href="#L44" aria-label="第 44 行">  44</a> // ============================================================================</span>
+<span id="L45"><a href="#L45" aria-label="第 45 行">  45</a> </span>
+<span id="L46"><a href="#L46" aria-label="第 46 行">  46</a> /** Details stored in CompactionEntry.details for file tracking */</span>
+<span id="L47"><a href="#L47" aria-label="第 47 行">  47</a> export interface CompactionDetails {</span>
+<span id="L48"><a href="#L48" aria-label="第 48 行">  48</a> 	readFiles: string[];</span>
+<span id="L49"><a href="#L49" aria-label="第 49 行">  49</a> 	modifiedFiles: string[];</span>
+<span id="L50"><a href="#L50" aria-label="第 50 行">  50</a> }</span>
+<span id="L51"><a href="#L51" aria-label="第 51 行">  51</a> </span>
+<span id="L52"><a href="#L52" aria-label="第 52 行">  52</a> /**</span>
+<span id="L53"><a href="#L53" aria-label="第 53 行">  53</a>  * Extract file operations from messages and previous compaction entries.</span>
+<span id="L54"><a href="#L54" aria-label="第 54 行">  54</a>  */</span>
+<span id="L55"><a href="#L55" aria-label="第 55 行">  55</a> function extractFileOperations(</span>
+<span id="L56"><a href="#L56" aria-label="第 56 行">  56</a> 	messages: AgentMessage[],</span>
+<span id="L57"><a href="#L57" aria-label="第 57 行">  57</a> 	entries: SessionEntry[],</span>
+<span id="L58"><a href="#L58" aria-label="第 58 行">  58</a> 	prevCompactionIndex: number,</span>
+<span id="L59"><a href="#L59" aria-label="第 59 行">  59</a> ): FileOperations {</span>
+<span id="L60"><a href="#L60" aria-label="第 60 行">  60</a> 	const fileOps = createFileOps();</span>
+<span id="L61"><a href="#L61" aria-label="第 61 行">  61</a> </span>
+<span id="L62"><a href="#L62" aria-label="第 62 行">  62</a> 	// Collect from previous compaction&#x27;s details (if pi-generated)</span>
+<span id="L63"><a href="#L63" aria-label="第 63 行">  63</a> 	if (prevCompactionIndex &gt;= 0) {</span>
+<span id="L64"><a href="#L64" aria-label="第 64 行">  64</a> 		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;</span>
+<span id="L65"><a href="#L65" aria-label="第 65 行">  65</a> 		if (!prevCompaction.fromHook &amp;&amp; prevCompaction.details) {</span>
+<span id="L66"><a href="#L66" aria-label="第 66 行">  66</a> 			// fromHook field kept for session file compatibility</span>
+<span id="L67"><a href="#L67" aria-label="第 67 行">  67</a> 			const details = prevCompaction.details as CompactionDetails;</span>
+<span id="L68"><a href="#L68" aria-label="第 68 行">  68</a> 			if (Array.isArray(details.readFiles)) {</span>
+<span id="L69"><a href="#L69" aria-label="第 69 行">  69</a> 				for (const f of details.readFiles) fileOps.read.add(f);</span>
+<span id="L70"><a href="#L70" aria-label="第 70 行">  70</a> 			}</span>
+<span id="L71"><a href="#L71" aria-label="第 71 行">  71</a> 			if (Array.isArray(details.modifiedFiles)) {</span>
+<span id="L72"><a href="#L72" aria-label="第 72 行">  72</a> 				for (const f of details.modifiedFiles) fileOps.edited.add(f);</span>
+<span id="L73"><a href="#L73" aria-label="第 73 行">  73</a> 			}</span>
+<span id="L74"><a href="#L74" aria-label="第 74 行">  74</a> 		}</span>
+<span id="L75"><a href="#L75" aria-label="第 75 行">  75</a> 	}</span>
+<span id="L76"><a href="#L76" aria-label="第 76 行">  76</a> </span>
+<span id="L77"><a href="#L77" aria-label="第 77 行">  77</a> 	// Extract from tool calls in messages</span>
+<span id="L78"><a href="#L78" aria-label="第 78 行">  78</a> 	for (const msg of messages) {</span>
+<span id="L79"><a href="#L79" aria-label="第 79 行">  79</a> 		extractFileOpsFromMessage(msg, fileOps);</span>
+<span id="L80"><a href="#L80" aria-label="第 80 行">  80</a> 	}</span>
+<span id="L81"><a href="#L81" aria-label="第 81 行">  81</a> </span>
+<span id="L82"><a href="#L82" aria-label="第 82 行">  82</a> 	return fileOps;</span>
+<span id="L83"><a href="#L83" aria-label="第 83 行">  83</a> }</span>
+<span id="L84"><a href="#L84" aria-label="第 84 行">  84</a> </span>
+<span id="L85"><a href="#L85" aria-label="第 85 行">  85</a> // ============================================================================</span>
+<span id="L86"><a href="#L86" aria-label="第 86 行">  86</a> // Message Extraction</span>
+<span id="L87"><a href="#L87" aria-label="第 87 行">  87</a> // ============================================================================</span>
+<span id="L88"><a href="#L88" aria-label="第 88 行">  88</a> </span>
+<span id="L89"><a href="#L89" aria-label="第 89 行">  89</a> /**</span>
+<span id="L90"><a href="#L90" aria-label="第 90 行">  90</a>  * Extract AgentMessage from an entry if it produces one.</span>
+<span id="L91"><a href="#L91" aria-label="第 91 行">  91</a>  * Returns undefined for entries that don&#x27;t contribute to LLM context.</span>
+<span id="L92"><a href="#L92" aria-label="第 92 行">  92</a>  */</span>
+<span id="L93"><a href="#L93" aria-label="第 93 行">  93</a> function getMessageFromEntryForCompaction(entry: SessionEntry): AgentMessage | undefined {</span>
+<span id="L94"><a href="#L94" aria-label="第 94 行">  94</a> 	if (entry.type === &quot;compaction&quot;) {</span>
+<span id="L95"><a href="#L95" aria-label="第 95 行">  95</a> 		return undefined;</span>
+<span id="L96"><a href="#L96" aria-label="第 96 行">  96</a> 	}</span>
+<span id="L97"><a href="#L97" aria-label="第 97 行">  97</a> 	// System messages are prompt state, not conversation; the compaction entry carries their replay.</span>
+<span id="L98"><a href="#L98" aria-label="第 98 行">  98</a> 	const message = sessionEntryToContextMessages(entry)[0];</span>
+<span id="L99"><a href="#L99" aria-label="第 99 行">  99</a> 	return message?.role === &quot;system&quot; ? undefined : message;</span>
+<span id="L100"><a href="#L100" aria-label="第 100 行"> 100</a> }</span>
+<span id="L101"><a href="#L101" aria-label="第 101 行"> 101</a> </span>
+<span id="L102"><a href="#L102" aria-label="第 102 行"> 102</a> /** Result from compact() - SessionManager adds uuid/parentUuid when saving */</span>
+<span id="L103"><a href="#L103" aria-label="第 103 行"> 103</a> export interface CompactionResult&lt;T = unknown&gt; {</span>
+<span id="L104"><a href="#L104" aria-label="第 104 行"> 104</a> 	summary: string;</span>
+<span id="L105"><a href="#L105" aria-label="第 105 行"> 105</a> 	firstKeptEntryId: string;</span>
+<span id="L106"><a href="#L106" aria-label="第 106 行"> 106</a> 	tokensBefore: number;</span>
+<span id="L107"><a href="#L107" aria-label="第 107 行"> 107</a> 	estimatedTokensAfter?: number;</span>
+<span id="L108"><a href="#L108" aria-label="第 108 行"> 108</a> 	/** Usage from the LLM call(s) that generated this summary, if available */</span>
+<span id="L109"><a href="#L109" aria-label="第 109 行"> 109</a> 	usage?: Usage;</span>
+<span id="L110"><a href="#L110" aria-label="第 110 行"> 110</a> 	/** Extension-specific data (e.g., ArtifactIndex, version markers for structured compaction) */</span>
+<span id="L111"><a href="#L111" aria-label="第 111 行"> 111</a> 	details?: T;</span>
+<span id="L112"><a href="#L112" aria-label="第 112 行"> 112</a> }</span>
+<span id="L113"><a href="#L113" aria-label="第 113 行"> 113</a> </span>
+<span id="L114"><a href="#L114" aria-label="第 114 行"> 114</a> function combineUsage(first: Usage, second: Usage): Usage {</span>
+<span id="L115"><a href="#L115" aria-label="第 115 行"> 115</a> 	return {</span>
+<span id="L116"><a href="#L116" aria-label="第 116 行"> 116</a> 		input: first.input + second.input,</span>
+<span id="L117"><a href="#L117" aria-label="第 117 行"> 117</a> 		output: first.output + second.output,</span>
+<span id="L118"><a href="#L118" aria-label="第 118 行"> 118</a> 		cacheRead: first.cacheRead + second.cacheRead,</span>
+<span id="L119"><a href="#L119" aria-label="第 119 行"> 119</a> 		cacheWrite: first.cacheWrite + second.cacheWrite,</span>
+<span id="L120"><a href="#L120" aria-label="第 120 行"> 120</a> 		...(first.cacheWrite1h !== undefined || second.cacheWrite1h !== undefined</span>
+<span id="L121"><a href="#L121" aria-label="第 121 行"> 121</a> 			? { cacheWrite1h: (first.cacheWrite1h ?? 0) + (second.cacheWrite1h ?? 0) }</span>
+<span id="L122"><a href="#L122" aria-label="第 122 行"> 122</a> 			: {}),</span>
+<span id="L123"><a href="#L123" aria-label="第 123 行"> 123</a> 		...(first.reasoning !== undefined || second.reasoning !== undefined</span>
+<span id="L124"><a href="#L124" aria-label="第 124 行"> 124</a> 			? { reasoning: (first.reasoning ?? 0) + (second.reasoning ?? 0) }</span>
+<span id="L125"><a href="#L125" aria-label="第 125 行"> 125</a> 			: {}),</span>
+<span id="L126"><a href="#L126" aria-label="第 126 行"> 126</a> 		totalTokens: first.totalTokens + second.totalTokens,</span>
+<span id="L127"><a href="#L127" aria-label="第 127 行"> 127</a> 		cost: {</span>
+<span id="L128"><a href="#L128" aria-label="第 128 行"> 128</a> 			input: first.cost.input + second.cost.input,</span>
+<span id="L129"><a href="#L129" aria-label="第 129 行"> 129</a> 			output: first.cost.output + second.cost.output,</span>
+<span id="L130"><a href="#L130" aria-label="第 130 行"> 130</a> 			cacheRead: first.cost.cacheRead + second.cost.cacheRead,</span>
+<span id="L131"><a href="#L131" aria-label="第 131 行"> 131</a> 			cacheWrite: first.cost.cacheWrite + second.cost.cacheWrite,</span>
+<span id="L132"><a href="#L132" aria-label="第 132 行"> 132</a> 			total: first.cost.total + second.cost.total,</span>
+<span id="L133"><a href="#L133" aria-label="第 133 行"> 133</a> 		},</span>
+<span id="L134"><a href="#L134" aria-label="第 134 行"> 134</a> 	};</span>
+<span id="L135"><a href="#L135" aria-label="第 135 行"> 135</a> }</span>
+<span id="L136"><a href="#L136" aria-label="第 136 行"> 136</a> </span>
+<span id="L137"><a href="#L137" aria-label="第 137 行"> 137</a> // ============================================================================</span>
+<span id="L138"><a href="#L138" aria-label="第 138 行"> 138</a> // Types</span>
+<span id="L139"><a href="#L139" aria-label="第 139 行"> 139</a> // ============================================================================</span>
+<span id="L140"><a href="#L140" aria-label="第 140 行"> 140</a> </span>
+<span id="L141"><a href="#L141" aria-label="第 141 行"> 141</a> export interface CompactionSettings {</span>
+<span id="L142"><a href="#L142" aria-label="第 142 行"> 142</a> 	enabled: boolean;</span>
+<span id="L143"><a href="#L143" aria-label="第 143 行"> 143</a> 	reserveTokens: number;</span>
+<span id="L144"><a href="#L144" aria-label="第 144 行"> 144</a> 	keepRecentTokens: number;</span>
+<span id="L145"><a href="#L145" aria-label="第 145 行"> 145</a> }</span>
+<span id="L146"><a href="#L146" aria-label="第 146 行"> 146</a> </span>
+<span id="L147"><a href="#L147" aria-label="第 147 行"> 147</a> export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {</span>
+<span id="L148"><a href="#L148" aria-label="第 148 行"> 148</a> 	enabled: true,</span>
+<span id="L149"><a href="#L149" aria-label="第 149 行"> 149</a> 	reserveTokens: 16384,</span>
+<span id="L150"><a href="#L150" aria-label="第 150 行"> 150</a> 	keepRecentTokens: 20000,</span>
+<span id="L151"><a href="#L151" aria-label="第 151 行"> 151</a> };</span>
+<span id="L152"><a href="#L152" aria-label="第 152 行"> 152</a> </span>
+<span id="L153"><a href="#L153" aria-label="第 153 行"> 153</a> // ============================================================================</span>
+<span id="L154"><a href="#L154" aria-label="第 154 行"> 154</a> // Token calculation</span>
+<span id="L155"><a href="#L155" aria-label="第 155 行"> 155</a> // ============================================================================</span>
+<span id="L156"><a href="#L156" aria-label="第 156 行"> 156</a> </span>
+<span id="L157"><a href="#L157" aria-label="第 157 行"> 157</a> /**</span>
+<span id="L158"><a href="#L158" aria-label="第 158 行"> 158</a>  * Calculate total context tokens from usage.</span>
+<span id="L159"><a href="#L159" aria-label="第 159 行"> 159</a>  * Uses the native totalTokens field when available, falls back to computing from components.</span>
+<span id="L160"><a href="#L160" aria-label="第 160 行"> 160</a>  */</span>
+<span id="L161"><a href="#L161" aria-label="第 161 行"> 161</a> export function calculateContextTokens(usage: Usage): number {</span>
+<span id="L162"><a href="#L162" aria-label="第 162 行"> 162</a> 	return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;</span>
+<span id="L163"><a href="#L163" aria-label="第 163 行"> 163</a> }</span>
+<span id="L164"><a href="#L164" aria-label="第 164 行"> 164</a> </span>
+<span id="L165"><a href="#L165" aria-label="第 165 行"> 165</a> /**</span>
+<span id="L166"><a href="#L166" aria-label="第 166 行"> 166</a>  * Get usage from an assistant message if available.</span>
+<span id="L167"><a href="#L167" aria-label="第 167 行"> 167</a>  * Skips aborted, error, and all-zero usage messages as they don&#x27;t have valid usage data.</span>
+<span id="L168"><a href="#L168" aria-label="第 168 行"> 168</a>  */</span>
+<span id="L169"><a href="#L169" aria-label="第 169 行"> 169</a> function getAssistantUsage(msg: AgentMessage): Usage | undefined {</span>
+<span id="L170"><a href="#L170" aria-label="第 170 行"> 170</a> 	if (msg.role === &quot;assistant&quot; &amp;&amp; &quot;usage&quot; in msg) {</span>
+<span id="L171"><a href="#L171" aria-label="第 171 行"> 171</a> 		const assistantMsg = msg as AssistantMessage;</span>
+<span id="L172"><a href="#L172" aria-label="第 172 行"> 172</a> 		if (</span>
+<span id="L173"><a href="#L173" aria-label="第 173 行"> 173</a> 			assistantMsg.stopReason !== &quot;aborted&quot; &amp;&amp;</span>
+<span id="L174"><a href="#L174" aria-label="第 174 行"> 174</a> 			assistantMsg.stopReason !== &quot;error&quot; &amp;&amp;</span>
+<span id="L175"><a href="#L175" aria-label="第 175 行"> 175</a> 			assistantMsg.usage &amp;&amp;</span>
+<span id="L176"><a href="#L176" aria-label="第 176 行"> 176</a> 			calculateContextTokens(assistantMsg.usage) &gt; 0</span>
+<span id="L177"><a href="#L177" aria-label="第 177 行"> 177</a> 		) {</span>
+<span id="L178"><a href="#L178" aria-label="第 178 行"> 178</a> 			return assistantMsg.usage;</span>
+<span id="L179"><a href="#L179" aria-label="第 179 行"> 179</a> 		}</span>
+<span id="L180"><a href="#L180" aria-label="第 180 行"> 180</a> 	}</span>
+<span id="L181"><a href="#L181" aria-label="第 181 行"> 181</a> 	return undefined;</span>
+<span id="L182"><a href="#L182" aria-label="第 182 行"> 182</a> }</span>
+<span id="L183"><a href="#L183" aria-label="第 183 行"> 183</a> </span>
+<span id="L184"><a href="#L184" aria-label="第 184 行"> 184</a> /**</span>
+<span id="L185"><a href="#L185" aria-label="第 185 行"> 185</a>  * Find the last valid assistant message usage from session entries.</span>
+<span id="L186"><a href="#L186" aria-label="第 186 行"> 186</a>  */</span>
+<span id="L187"><a href="#L187" aria-label="第 187 行"> 187</a> export function getLastAssistantUsage(entries: SessionEntry[]): Usage | undefined {</span>
+<span id="L188"><a href="#L188" aria-label="第 188 行"> 188</a> 	for (let i = entries.length - 1; i &gt;= 0; i--) {</span>
+<span id="L189"><a href="#L189" aria-label="第 189 行"> 189</a> 		const entry = entries[i];</span>
+<span id="L190"><a href="#L190" aria-label="第 190 行"> 190</a> 		if (entry.type === &quot;message&quot;) {</span>
+<span id="L191"><a href="#L191" aria-label="第 191 行"> 191</a> 			const usage = getAssistantUsage(entry.message);</span>
+<span id="L192"><a href="#L192" aria-label="第 192 行"> 192</a> 			if (usage) return usage;</span>
+<span id="L193"><a href="#L193" aria-label="第 193 行"> 193</a> 		}</span>
+<span id="L194"><a href="#L194" aria-label="第 194 行"> 194</a> 	}</span>
+<span id="L195"><a href="#L195" aria-label="第 195 行"> 195</a> 	return undefined;</span>
+<span id="L196"><a href="#L196" aria-label="第 196 行"> 196</a> }</span>
+<span id="L197"><a href="#L197" aria-label="第 197 行"> 197</a> </span>
+<span id="L198"><a href="#L198" aria-label="第 198 行"> 198</a> export interface ContextUsageEstimate {</span>
+<span id="L199"><a href="#L199" aria-label="第 199 行"> 199</a> 	tokens: number;</span>
+<span id="L200"><a href="#L200" aria-label="第 200 行"> 200</a> 	usageTokens: number;</span>
+<span id="L201"><a href="#L201" aria-label="第 201 行"> 201</a> 	trailingTokens: number;</span>
+<span id="L202"><a href="#L202" aria-label="第 202 行"> 202</a> 	lastUsageIndex: number | null;</span>
+<span id="L203"><a href="#L203" aria-label="第 203 行"> 203</a> }</span>
+<span id="L204"><a href="#L204" aria-label="第 204 行"> 204</a> </span>
+<span id="L205"><a href="#L205" aria-label="第 205 行"> 205</a> function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; index: number } | undefined {</span>
+<span id="L206"><a href="#L206" aria-label="第 206 行"> 206</a> 	for (let i = messages.length - 1; i &gt;= 0; i--) {</span>
+<span id="L207"><a href="#L207" aria-label="第 207 行"> 207</a> 		const usage = getAssistantUsage(messages[i]);</span>
+<span id="L208"><a href="#L208" aria-label="第 208 行"> 208</a> 		if (usage) return { usage, index: i };</span>
+<span id="L209"><a href="#L209" aria-label="第 209 行"> 209</a> 	}</span>
+<span id="L210"><a href="#L210" aria-label="第 210 行"> 210</a> 	return undefined;</span>
+<span id="L211"><a href="#L211" aria-label="第 211 行"> 211</a> }</span>
+<span id="L212"><a href="#L212" aria-label="第 212 行"> 212</a> </span>
+<span id="L213"><a href="#L213" aria-label="第 213 行"> 213</a> /**</span>
+<span id="L214"><a href="#L214" aria-label="第 214 行"> 214</a>  * Estimate context tokens from messages, using the last assistant usage when available.</span>
+<span id="L215"><a href="#L215" aria-label="第 215 行"> 215</a>  * If there are messages after the last usage, estimate their tokens with estimateTokens.</span>
+<span id="L216"><a href="#L216" aria-label="第 216 行"> 216</a>  */</span>
+<span id="L217"><a href="#L217" aria-label="第 217 行"> 217</a> export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {</span>
+<span id="L218"><a href="#L218" aria-label="第 218 行"> 218</a> 	const usageInfo = getLastAssistantUsageInfo(messages);</span>
+<span id="L219"><a href="#L219" aria-label="第 219 行"> 219</a> </span>
+<span id="L220"><a href="#L220" aria-label="第 220 行"> 220</a> 	if (!usageInfo) {</span>
+<span id="L221"><a href="#L221" aria-label="第 221 行"> 221</a> 		let estimated = 0;</span>
+<span id="L222"><a href="#L222" aria-label="第 222 行"> 222</a> 		for (const message of messages) {</span>
+<span id="L223"><a href="#L223" aria-label="第 223 行"> 223</a> 			estimated += estimateTokens(message);</span>
+<span id="L224"><a href="#L224" aria-label="第 224 行"> 224</a> 		}</span>
+<span id="L225"><a href="#L225" aria-label="第 225 行"> 225</a> 		return {</span>
+<span id="L226"><a href="#L226" aria-label="第 226 行"> 226</a> 			tokens: estimated,</span>
+<span id="L227"><a href="#L227" aria-label="第 227 行"> 227</a> 			usageTokens: 0,</span>
+<span id="L228"><a href="#L228" aria-label="第 228 行"> 228</a> 			trailingTokens: estimated,</span>
+<span id="L229"><a href="#L229" aria-label="第 229 行"> 229</a> 			lastUsageIndex: null,</span>
+<span id="L230"><a href="#L230" aria-label="第 230 行"> 230</a> 		};</span>
+<span id="L231"><a href="#L231" aria-label="第 231 行"> 231</a> 	}</span>
+<span id="L232"><a href="#L232" aria-label="第 232 行"> 232</a> </span>
+<span id="L233"><a href="#L233" aria-label="第 233 行"> 233</a> 	const usageTokens = calculateContextTokens(usageInfo.usage);</span>
+<span id="L234"><a href="#L234" aria-label="第 234 行"> 234</a> 	let trailingTokens = 0;</span>
+<span id="L235"><a href="#L235" aria-label="第 235 行"> 235</a> 	for (let i = usageInfo.index + 1; i &lt; messages.length; i++) {</span>
+<span id="L236"><a href="#L236" aria-label="第 236 行"> 236</a> 		trailingTokens += estimateTokens(messages[i]);</span>
+<span id="L237"><a href="#L237" aria-label="第 237 行"> 237</a> 	}</span>
+<span id="L238"><a href="#L238" aria-label="第 238 行"> 238</a> </span>
+<span id="L239"><a href="#L239" aria-label="第 239 行"> 239</a> 	return {</span>
+<span id="L240"><a href="#L240" aria-label="第 240 行"> 240</a> 		tokens: usageTokens + trailingTokens,</span>
+<span id="L241"><a href="#L241" aria-label="第 241 行"> 241</a> 		usageTokens,</span>
+<span id="L242"><a href="#L242" aria-label="第 242 行"> 242</a> 		trailingTokens,</span>
+<span id="L243"><a href="#L243" aria-label="第 243 行"> 243</a> 		lastUsageIndex: usageInfo.index,</span>
+<span id="L244"><a href="#L244" aria-label="第 244 行"> 244</a> 	};</span>
+<span id="L245"><a href="#L245" aria-label="第 245 行"> 245</a> }</span>
+<span id="L246"><a href="#L246" aria-label="第 246 行"> 246</a> </span>
+<span id="L247"><a href="#L247" aria-label="第 247 行"> 247</a> /**</span>
+<span id="L248"><a href="#L248" aria-label="第 248 行"> 248</a>  * Check if compaction should trigger based on context usage.</span>
+<span id="L249"><a href="#L249" aria-label="第 249 行"> 249</a>  */</span>
+<span id="L250"><a href="#L250" aria-label="第 250 行"> 250</a> export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {</span>
+<span id="L251"><a href="#L251" aria-label="第 251 行"> 251</a> 	if (!settings.enabled) return false;</span>
+<span id="L252"><a href="#L252" aria-label="第 252 行"> 252</a> 	return contextTokens &gt; contextWindow - settings.reserveTokens;</span>
+<span id="L253"><a href="#L253" aria-label="第 253 行"> 253</a> }</span>
+<span id="L254"><a href="#L254" aria-label="第 254 行"> 254</a> </span>
+<span id="L255"><a href="#L255" aria-label="第 255 行"> 255</a> // ============================================================================</span>
+<span id="L256"><a href="#L256" aria-label="第 256 行"> 256</a> // Cut point detection</span>
+<span id="L257"><a href="#L257" aria-label="第 257 行"> 257</a> // ============================================================================</span>
+<span id="L258"><a href="#L258" aria-label="第 258 行"> 258</a> </span>
+<span id="L259"><a href="#L259" aria-label="第 259 行"> 259</a> const ESTIMATED_IMAGE_CHARS = 4800;</span>
+<span id="L260"><a href="#L260" aria-label="第 260 行"> 260</a> </span>
+<span id="L261"><a href="#L261" aria-label="第 261 行"> 261</a> function estimateTextAndImageContentChars(content: string | Array&lt;{ type: string; text?: string }&gt;): number {</span>
+<span id="L262"><a href="#L262" aria-label="第 262 行"> 262</a> 	if (typeof content === &quot;string&quot;) {</span>
+<span id="L263"><a href="#L263" aria-label="第 263 行"> 263</a> 		return content.length;</span>
+<span id="L264"><a href="#L264" aria-label="第 264 行"> 264</a> 	}</span>
+<span id="L265"><a href="#L265" aria-label="第 265 行"> 265</a> </span>
+<span id="L266"><a href="#L266" aria-label="第 266 行"> 266</a> 	let chars = 0;</span>
+<span id="L267"><a href="#L267" aria-label="第 267 行"> 267</a> 	for (const block of content) {</span>
+<span id="L268"><a href="#L268" aria-label="第 268 行"> 268</a> 		if (block.type === &quot;text&quot; &amp;&amp; block.text) {</span>
+<span id="L269"><a href="#L269" aria-label="第 269 行"> 269</a> 			chars += block.text.length;</span>
+<span id="L270"><a href="#L270" aria-label="第 270 行"> 270</a> 		} else if (block.type === &quot;image&quot;) {</span>
+<span id="L271"><a href="#L271" aria-label="第 271 行"> 271</a> 			chars += ESTIMATED_IMAGE_CHARS;</span>
+<span id="L272"><a href="#L272" aria-label="第 272 行"> 272</a> 		}</span>
+<span id="L273"><a href="#L273" aria-label="第 273 行"> 273</a> 	}</span>
+<span id="L274"><a href="#L274" aria-label="第 274 行"> 274</a> 	return chars;</span>
+<span id="L275"><a href="#L275" aria-label="第 275 行"> 275</a> }</span>
+<span id="L276"><a href="#L276" aria-label="第 276 行"> 276</a> </span>
+<span id="L277"><a href="#L277" aria-label="第 277 行"> 277</a> /**</span>
+<span id="L278"><a href="#L278" aria-label="第 278 行"> 278</a>  * Estimate token count for a message using chars/4 heuristic.</span>
+<span id="L279"><a href="#L279" aria-label="第 279 行"> 279</a>  * This is conservative (overestimates tokens).</span>
+<span id="L280"><a href="#L280" aria-label="第 280 行"> 280</a>  */</span>
+<span id="L281"><a href="#L281" aria-label="第 281 行"> 281</a> export function estimateTokens(message: AgentMessage): number {</span>
+<span id="L282"><a href="#L282" aria-label="第 282 行"> 282</a> 	let chars = 0;</span>
+<span id="L283"><a href="#L283" aria-label="第 283 行"> 283</a> </span>
+<span id="L284"><a href="#L284" aria-label="第 284 行"> 284</a> 	switch (message.role) {</span>
+<span id="L285"><a href="#L285" aria-label="第 285 行"> 285</a> 		case &quot;user&quot;: {</span>
+<span id="L286"><a href="#L286" aria-label="第 286 行"> 286</a> 			chars = estimateTextAndImageContentChars(</span>
+<span id="L287"><a href="#L287" aria-label="第 287 行"> 287</a> 				(message as { content: string | Array&lt;{ type: string; text?: string }&gt; }).content,</span>
+<span id="L288"><a href="#L288" aria-label="第 288 行"> 288</a> 			);</span>
+<span id="L289"><a href="#L289" aria-label="第 289 行"> 289</a> 			return Math.ceil(chars / 4);</span>
+<span id="L290"><a href="#L290" aria-label="第 290 行"> 290</a> 		}</span>
+<span id="L291"><a href="#L291" aria-label="第 291 行"> 291</a> 		case &quot;assistant&quot;: {</span>
+<span id="L292"><a href="#L292" aria-label="第 292 行"> 292</a> 			const assistant = message as AssistantMessage;</span>
+<span id="L293"><a href="#L293" aria-label="第 293 行"> 293</a> 			for (const block of assistant.content) {</span>
+<span id="L294"><a href="#L294" aria-label="第 294 行"> 294</a> 				if (block.type === &quot;text&quot;) {</span>
+<span id="L295"><a href="#L295" aria-label="第 295 行"> 295</a> 					chars += block.text.length;</span>
+<span id="L296"><a href="#L296" aria-label="第 296 行"> 296</a> 				} else if (block.type === &quot;thinking&quot;) {</span>
+<span id="L297"><a href="#L297" aria-label="第 297 行"> 297</a> 					chars += block.thinking.length;</span>
+<span id="L298"><a href="#L298" aria-label="第 298 行"> 298</a> 				} else if (block.type === &quot;toolCall&quot;) {</span>
+<span id="L299"><a href="#L299" aria-label="第 299 行"> 299</a> 					chars += block.name.length + JSON.stringify(block.arguments).length;</span>
+<span id="L300"><a href="#L300" aria-label="第 300 行"> 300</a> 				}</span>
+<span id="L301"><a href="#L301" aria-label="第 301 行"> 301</a> 			}</span>
+<span id="L302"><a href="#L302" aria-label="第 302 行"> 302</a> 			return Math.ceil(chars / 4);</span>
+<span id="L303"><a href="#L303" aria-label="第 303 行"> 303</a> 		}</span>
+<span id="L304"><a href="#L304" aria-label="第 304 行"> 304</a> 		case &quot;custom&quot;:</span>
+<span id="L305"><a href="#L305" aria-label="第 305 行"> 305</a> 		case &quot;toolResult&quot;: {</span>
+<span id="L306"><a href="#L306" aria-label="第 306 行"> 306</a> 			chars = estimateTextAndImageContentChars(message.content);</span>
+<span id="L307"><a href="#L307" aria-label="第 307 行"> 307</a> 			return Math.ceil(chars / 4);</span>
+<span id="L308"><a href="#L308" aria-label="第 308 行"> 308</a> 		}</span>
+<span id="L309"><a href="#L309" aria-label="第 309 行"> 309</a> 		case &quot;bashExecution&quot;: {</span>
+<span id="L310"><a href="#L310" aria-label="第 310 行"> 310</a> 			chars = message.command.length + message.output.length;</span>
+<span id="L311"><a href="#L311" aria-label="第 311 行"> 311</a> 			return Math.ceil(chars / 4);</span>
+<span id="L312"><a href="#L312" aria-label="第 312 行"> 312</a> 		}</span>
+<span id="L313"><a href="#L313" aria-label="第 313 行"> 313</a> 		case &quot;branchSummary&quot;:</span>
+<span id="L314"><a href="#L314" aria-label="第 314 行"> 314</a> 		case &quot;compactionSummary&quot;: {</span>
+<span id="L315"><a href="#L315" aria-label="第 315 行"> 315</a> 			chars = message.summary.length;</span>
+<span id="L316"><a href="#L316" aria-label="第 316 行"> 316</a> 			return Math.ceil(chars / 4);</span>
+<span id="L317"><a href="#L317" aria-label="第 317 行"> 317</a> 		}</span>
+<span id="L318"><a href="#L318" aria-label="第 318 行"> 318</a> 	}</span>
+<span id="L319"><a href="#L319" aria-label="第 319 行"> 319</a> </span>
+<span id="L320"><a href="#L320" aria-label="第 320 行"> 320</a> 	return 0;</span>
+<span id="L321"><a href="#L321" aria-label="第 321 行"> 321</a> }</span>
+<span id="L322"><a href="#L322" aria-label="第 322 行"> 322</a> </span>
+<span id="L323"><a href="#L323" aria-label="第 323 行"> 323</a> function isCutPointMessage(message: AgentMessage): boolean {</span>
+<span id="L324"><a href="#L324" aria-label="第 324 行"> 324</a> 	switch (message.role) {</span>
+<span id="L325"><a href="#L325" aria-label="第 325 行"> 325</a> 		case &quot;user&quot;:</span>
+<span id="L326"><a href="#L326" aria-label="第 326 行"> 326</a> 		case &quot;assistant&quot;:</span>
+<span id="L327"><a href="#L327" aria-label="第 327 行"> 327</a> 		case &quot;bashExecution&quot;:</span>
+<span id="L328"><a href="#L328" aria-label="第 328 行"> 328</a> 		case &quot;custom&quot;:</span>
+<span id="L329"><a href="#L329" aria-label="第 329 行"> 329</a> 		case &quot;branchSummary&quot;:</span>
+<span id="L330"><a href="#L330" aria-label="第 330 行"> 330</a> 		case &quot;compactionSummary&quot;:</span>
+<span id="L331"><a href="#L331" aria-label="第 331 行"> 331</a> 			return true;</span>
+<span id="L332"><a href="#L332" aria-label="第 332 行"> 332</a> 		case &quot;toolResult&quot;:</span>
+<span id="L333"><a href="#L333" aria-label="第 333 行"> 333</a> 			return false;</span>
+<span id="L334"><a href="#L334" aria-label="第 334 行"> 334</a> 	}</span>
+<span id="L335"><a href="#L335" aria-label="第 335 行"> 335</a> 	return false;</span>
+<span id="L336"><a href="#L336" aria-label="第 336 行"> 336</a> }</span>
+<span id="L337"><a href="#L337" aria-label="第 337 行"> 337</a> </span>
+<span id="L338"><a href="#L338" aria-label="第 338 行"> 338</a> function isTurnStartMessage(message: AgentMessage): boolean {</span>
+<span id="L339"><a href="#L339" aria-label="第 339 行"> 339</a> 	switch (message.role) {</span>
+<span id="L340"><a href="#L340" aria-label="第 340 行"> 340</a> 		case &quot;user&quot;:</span>
+<span id="L341"><a href="#L341" aria-label="第 341 行"> 341</a> 		case &quot;bashExecution&quot;:</span>
+<span id="L342"><a href="#L342" aria-label="第 342 行"> 342</a> 		case &quot;custom&quot;:</span>
+<span id="L343"><a href="#L343" aria-label="第 343 行"> 343</a> 		case &quot;branchSummary&quot;:</span>
+<span id="L344"><a href="#L344" aria-label="第 344 行"> 344</a> 		case &quot;compactionSummary&quot;:</span>
+<span id="L345"><a href="#L345" aria-label="第 345 行"> 345</a> 			return true;</span>
+<span id="L346"><a href="#L346" aria-label="第 346 行"> 346</a> 		case &quot;assistant&quot;:</span>
+<span id="L347"><a href="#L347" aria-label="第 347 行"> 347</a> 		case &quot;toolResult&quot;:</span>
+<span id="L348"><a href="#L348" aria-label="第 348 行"> 348</a> 			return false;</span>
+<span id="L349"><a href="#L349" aria-label="第 349 行"> 349</a> 	}</span>
+<span id="L350"><a href="#L350" aria-label="第 350 行"> 350</a> 	return false;</span>
+<span id="L351"><a href="#L351" aria-label="第 351 行"> 351</a> }</span>
+<span id="L352"><a href="#L352" aria-label="第 352 行"> 352</a> </span>
+<span id="L353"><a href="#L353" aria-label="第 353 行"> 353</a> function isTurnStartEntry(entry: SessionEntry): boolean {</span>
+<span id="L354"><a href="#L354" aria-label="第 354 行"> 354</a> 	if (entry.type === &quot;compaction&quot;) {</span>
+<span id="L355"><a href="#L355" aria-label="第 355 行"> 355</a> 		return false;</span>
+<span id="L356"><a href="#L356" aria-label="第 356 行"> 356</a> 	}</span>
+<span id="L357"><a href="#L357" aria-label="第 357 行"> 357</a> 	return sessionEntryToContextMessages(entry).some(isTurnStartMessage);</span>
+<span id="L358"><a href="#L358" aria-label="第 358 行"> 358</a> }</span>
+<span id="L359"><a href="#L359" aria-label="第 359 行"> 359</a> </span>
+<span id="L360"><a href="#L360" aria-label="第 360 行"> 360</a> /**</span>
+<span id="L361"><a href="#L361" aria-label="第 361 行"> 361</a>  * Find valid cut points: indices of context-visible user-like or assistant messages.</span>
+<span id="L362"><a href="#L362" aria-label="第 362 行"> 362</a>  * Never cut at tool results (they must follow their tool call).</span>
+<span id="L363"><a href="#L363" aria-label="第 363 行"> 363</a>  * When we cut at an assistant message with tool calls, its tool results follow it</span>
+<span id="L364"><a href="#L364" aria-label="第 364 行"> 364</a>  * and will be kept.</span>
+<span id="L365"><a href="#L365" aria-label="第 365 行"> 365</a>  */</span>
+<span id="L366"><a href="#L366" aria-label="第 366 行"> 366</a> function findValidCutPoints(entries: SessionEntry[], startIndex: number, endIndex: number): number[] {</span>
+<span id="L367"><a href="#L367" aria-label="第 367 行"> 367</a> 	const cutPoints: number[] = [];</span>
+<span id="L368"><a href="#L368" aria-label="第 368 行"> 368</a> 	for (let i = startIndex; i &lt; endIndex; i++) {</span>
+<span id="L369"><a href="#L369" aria-label="第 369 行"> 369</a> 		const entry = entries[i];</span>
+<span id="L370"><a href="#L370" aria-label="第 370 行"> 370</a> 		if (entry.type === &quot;compaction&quot;) {</span>
+<span id="L371"><a href="#L371" aria-label="第 371 行"> 371</a> 			continue;</span>
+<span id="L372"><a href="#L372" aria-label="第 372 行"> 372</a> 		}</span>
+<span id="L373"><a href="#L373" aria-label="第 373 行"> 373</a> 		if (sessionEntryToContextMessages(entry).some(isCutPointMessage)) {</span>
+<span id="L374"><a href="#L374" aria-label="第 374 行"> 374</a> 			cutPoints.push(i);</span>
+<span id="L375"><a href="#L375" aria-label="第 375 行"> 375</a> 		}</span>
+<span id="L376"><a href="#L376" aria-label="第 376 行"> 376</a> 	}</span>
+<span id="L377"><a href="#L377" aria-label="第 377 行"> 377</a> 	return cutPoints;</span>
+<span id="L378"><a href="#L378" aria-label="第 378 行"> 378</a> }</span>
+<span id="L379"><a href="#L379" aria-label="第 379 行"> 379</a> </span>
+<span id="L380"><a href="#L380" aria-label="第 380 行"> 380</a> /**</span>
+<span id="L381"><a href="#L381" aria-label="第 381 行"> 381</a>  * Find the context-visible user-role message that starts the turn containing the given entry index.</span>
+<span id="L382"><a href="#L382" aria-label="第 382 行"> 382</a>  * Returns -1 if no turn start found before the index.</span>
+<span id="L383"><a href="#L383" aria-label="第 383 行"> 383</a>  */</span>
+<span id="L384"><a href="#L384" aria-label="第 384 行"> 384</a> export function findTurnStartIndex(entries: SessionEntry[], entryIndex: number, startIndex: number): number {</span>
+<span id="L385"><a href="#L385" aria-label="第 385 行"> 385</a> 	for (let i = entryIndex; i &gt;= startIndex; i--) {</span>
+<span id="L386"><a href="#L386" aria-label="第 386 行"> 386</a> 		if (isTurnStartEntry(entries[i])) {</span>
+<span id="L387"><a href="#L387" aria-label="第 387 行"> 387</a> 			return i;</span>
+<span id="L388"><a href="#L388" aria-label="第 388 行"> 388</a> 		}</span>
+<span id="L389"><a href="#L389" aria-label="第 389 行"> 389</a> 	}</span>
+<span id="L390"><a href="#L390" aria-label="第 390 行"> 390</a> 	return -1;</span>
+<span id="L391"><a href="#L391" aria-label="第 391 行"> 391</a> }</span>
+<span id="L392"><a href="#L392" aria-label="第 392 行"> 392</a> </span>
+<span id="L393"><a href="#L393" aria-label="第 393 行"> 393</a> export interface CutPointResult {</span>
+<span id="L394"><a href="#L394" aria-label="第 394 行"> 394</a> 	/** Index of first entry to keep */</span>
+<span id="L395"><a href="#L395" aria-label="第 395 行"> 395</a> 	firstKeptEntryIndex: number;</span>
+<span id="L396"><a href="#L396" aria-label="第 396 行"> 396</a> 	/** Index of user message that starts the turn being split, or -1 if not splitting */</span>
+<span id="L397"><a href="#L397" aria-label="第 397 行"> 397</a> 	turnStartIndex: number;</span>
+<span id="L398"><a href="#L398" aria-label="第 398 行"> 398</a> 	/** Whether this cut splits a turn (cut point is not a user message) */</span>
+<span id="L399"><a href="#L399" aria-label="第 399 行"> 399</a> 	isSplitTurn: boolean;</span>
+<span id="L400"><a href="#L400" aria-label="第 400 行"> 400</a> }</span>
+<span id="L401"><a href="#L401" aria-label="第 401 行"> 401</a> </span>
+<span id="L402"><a href="#L402" aria-label="第 402 行"> 402</a> /**</span>
+<span id="L403"><a href="#L403" aria-label="第 403 行"> 403</a>  * Find the cut point in session entries that keeps approximately `keepRecentTokens`.</span>
+<span id="L404"><a href="#L404" aria-label="第 404 行"> 404</a>  *</span>
+<span id="L405"><a href="#L405" aria-label="第 405 行"> 405</a>  * Algorithm: Walk backwards from newest, accumulating estimated message sizes.</span>
+<span id="L406"><a href="#L406" aria-label="第 406 行"> 406</a>  * Stop when we&#x27;ve accumulated &gt;= keepRecentTokens. Cut at that point.</span>
+<span id="L407"><a href="#L407" aria-label="第 407 行"> 407</a>  *</span>
+<span id="L408"><a href="#L408" aria-label="第 408 行"> 408</a>  * Can cut at user OR assistant messages (never tool results). When cutting at an</span>
+<span id="L409"><a href="#L409" aria-label="第 409 行"> 409</a>  * assistant message with tool calls, its tool results come after and will be kept.</span>
+<span id="L410"><a href="#L410" aria-label="第 410 行"> 410</a>  *</span>
+<span id="L411"><a href="#L411" aria-label="第 411 行"> 411</a>  * Returns CutPointResult with:</span>
+<span id="L412"><a href="#L412" aria-label="第 412 行"> 412</a>  * - firstKeptEntryIndex: the entry index to start keeping from</span>
+<span id="L413"><a href="#L413" aria-label="第 413 行"> 413</a>  * - turnStartIndex: if cutting mid-turn, the user message that started that turn</span>
+<span id="L414"><a href="#L414" aria-label="第 414 行"> 414</a>  * - isSplitTurn: whether we&#x27;re cutting in the middle of a turn</span>
+<span id="L415"><a href="#L415" aria-label="第 415 行"> 415</a>  *</span>
+<span id="L416"><a href="#L416" aria-label="第 416 行"> 416</a>  * Only considers entries between `startIndex` and `endIndex` (exclusive).</span>
+<span id="L417"><a href="#L417" aria-label="第 417 行"> 417</a>  */</span>
+<span id="L418"><a href="#L418" aria-label="第 418 行"> 418</a> export function findCutPoint(</span>
+<span id="L419"><a href="#L419" aria-label="第 419 行"> 419</a> 	entries: SessionEntry[],</span>
+<span id="L420"><a href="#L420" aria-label="第 420 行"> 420</a> 	startIndex: number,</span>
+<span id="L421"><a href="#L421" aria-label="第 421 行"> 421</a> 	endIndex: number,</span>
+<span id="L422"><a href="#L422" aria-label="第 422 行"> 422</a> 	keepRecentTokens: number,</span>
+<span id="L423"><a href="#L423" aria-label="第 423 行"> 423</a> ): CutPointResult {</span>
+<span id="L424"><a href="#L424" aria-label="第 424 行"> 424</a> 	const cutPoints = findValidCutPoints(entries, startIndex, endIndex);</span>
+<span id="L425"><a href="#L425" aria-label="第 425 行"> 425</a> </span>
+<span id="L426"><a href="#L426" aria-label="第 426 行"> 426</a> 	if (cutPoints.length === 0) {</span>
+<span id="L427"><a href="#L427" aria-label="第 427 行"> 427</a> 		return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };</span>
+<span id="L428"><a href="#L428" aria-label="第 428 行"> 428</a> 	}</span>
+<span id="L429"><a href="#L429" aria-label="第 429 行"> 429</a> </span>
+<span id="L430"><a href="#L430" aria-label="第 430 行"> 430</a> 	// Walk backwards from newest, accumulating estimated message sizes</span>
+<span id="L431"><a href="#L431" aria-label="第 431 行"> 431</a> 	let accumulatedTokens = 0;</span>
+<span id="L432"><a href="#L432" aria-label="第 432 行"> 432</a> 	let cutIndex = cutPoints[0]; // Default: keep from first message (not header)</span>
+<span id="L433"><a href="#L433" aria-label="第 433 行"> 433</a> </span>
+<span id="L434"><a href="#L434" aria-label="第 434 行"> 434</a> 	for (let i = endIndex - 1; i &gt;= startIndex; i--) {</span>
+<span id="L435"><a href="#L435" aria-label="第 435 行"> 435</a> 		const entry = entries[i];</span>
+<span id="L436"><a href="#L436" aria-label="第 436 行"> 436</a> 		const messageTokens = sessionEntryToContextMessages(entry).reduce(</span>
+<span id="L437"><a href="#L437" aria-label="第 437 行"> 437</a> 			(sum, message) =&gt; sum + estimateTokens(message),</span>
+<span id="L438"><a href="#L438" aria-label="第 438 行"> 438</a> 			0,</span>
+<span id="L439"><a href="#L439" aria-label="第 439 行"> 439</a> 		);</span>
+<span id="L440"><a href="#L440" aria-label="第 440 行"> 440</a> 		if (messageTokens === 0) continue;</span>
+<span id="L441"><a href="#L441" aria-label="第 441 行"> 441</a> 		accumulatedTokens += messageTokens;</span>
+<span id="L442"><a href="#L442" aria-label="第 442 行"> 442</a> </span>
+<span id="L443"><a href="#L443" aria-label="第 443 行"> 443</a> 		// Check if we&#x27;ve exceeded the budget</span>
+<span id="L444"><a href="#L444" aria-label="第 444 行"> 444</a> 		if (accumulatedTokens &gt;= keepRecentTokens) {</span>
+<span id="L445"><a href="#L445" aria-label="第 445 行"> 445</a> 			// Prefer the closest valid cut point at or after this entry. If trailing</span>
+<span id="L446"><a href="#L446" aria-label="第 446 行"> 446</a> 			// tool results exceed the budget by themselves, keep their preceding</span>
+<span id="L447"><a href="#L447" aria-label="第 447 行"> 447</a> 			// assistant tool call instead of falling back to the first message.</span>
+<span id="L448"><a href="#L448" aria-label="第 448 行"> 448</a> 			cutIndex = cutPoints.find((candidate) =&gt; candidate &gt;= i) ?? cutPoints[cutPoints.length - 1];</span>
+<span id="L449"><a href="#L449" aria-label="第 449 行"> 449</a> 			break;</span>
+<span id="L450"><a href="#L450" aria-label="第 450 行"> 450</a> 		}</span>
+<span id="L451"><a href="#L451" aria-label="第 451 行"> 451</a> 	}</span>
+<span id="L452"><a href="#L452" aria-label="第 452 行"> 452</a> </span>
+<span id="L453"><a href="#L453" aria-label="第 453 行"> 453</a> 	// Scan backwards from cutIndex to include adjacent metadata entries that do not affect context.</span>
+<span id="L454"><a href="#L454" aria-label="第 454 行"> 454</a> 	while (cutIndex &gt; startIndex) {</span>
+<span id="L455"><a href="#L455" aria-label="第 455 行"> 455</a> 		const prevEntry = entries[cutIndex - 1];</span>
+<span id="L456"><a href="#L456" aria-label="第 456 行"> 456</a> 		// Stop at compaction boundaries or context-visible entries.</span>
+<span id="L457"><a href="#L457" aria-label="第 457 行"> 457</a> 		if (prevEntry.type === &quot;compaction&quot; || sessionEntryToContextMessages(prevEntry).length &gt; 0) {</span>
+<span id="L458"><a href="#L458" aria-label="第 458 行"> 458</a> 			break;</span>
+<span id="L459"><a href="#L459" aria-label="第 459 行"> 459</a> 		}</span>
+<span id="L460"><a href="#L460" aria-label="第 460 行"> 460</a> 		cutIndex--;</span>
+<span id="L461"><a href="#L461" aria-label="第 461 行"> 461</a> 	}</span>
+<span id="L462"><a href="#L462" aria-label="第 462 行"> 462</a> </span>
+<span id="L463"><a href="#L463" aria-label="第 463 行"> 463</a> 	// Determine if this is a split turn</span>
+<span id="L464"><a href="#L464" aria-label="第 464 行"> 464</a> 	const cutEntry = entries[cutIndex];</span>
+<span id="L465"><a href="#L465" aria-label="第 465 行"> 465</a> 	const startsTurn = isTurnStartEntry(cutEntry);</span>
+<span id="L466"><a href="#L466" aria-label="第 466 行"> 466</a> 	const turnStartIndex = startsTurn ? -1 : findTurnStartIndex(entries, cutIndex, startIndex);</span>
+<span id="L467"><a href="#L467" aria-label="第 467 行"> 467</a> </span>
+<span id="L468"><a href="#L468" aria-label="第 468 行"> 468</a> 	return {</span>
+<span id="L469"><a href="#L469" aria-label="第 469 行"> 469</a> 		firstKeptEntryIndex: cutIndex,</span>
+<span id="L470"><a href="#L470" aria-label="第 470 行"> 470</a> 		turnStartIndex,</span>
+<span id="L471"><a href="#L471" aria-label="第 471 行"> 471</a> 		isSplitTurn: !startsTurn &amp;&amp; turnStartIndex !== -1,</span>
+<span id="L472"><a href="#L472" aria-label="第 472 行"> 472</a> 	};</span>
+<span id="L473"><a href="#L473" aria-label="第 473 行"> 473</a> }</span>
+<span id="L474"><a href="#L474" aria-label="第 474 行"> 474</a> </span>
+<span id="L475"><a href="#L475" aria-label="第 475 行"> 475</a> // ============================================================================</span>
+<span id="L476"><a href="#L476" aria-label="第 476 行"> 476</a> // Summarization</span>
+<span id="L477"><a href="#L477" aria-label="第 477 行"> 477</a> // ============================================================================</span>
+<span id="L478"><a href="#L478" aria-label="第 478 行"> 478</a> </span>
+<span id="L479"><a href="#L479" aria-label="第 479 行"> 479</a> const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.</span>
+<span id="L480"><a href="#L480" aria-label="第 480 行"> 480</a> </span>
+<span id="L481"><a href="#L481" aria-label="第 481 行"> 481</a> Use this EXACT format:</span>
+<span id="L482"><a href="#L482" aria-label="第 482 行"> 482</a> </span>
+<span id="L483"><a href="#L483" aria-label="第 483 行"> 483</a> ## Goal</span>
+<span id="L484"><a href="#L484" aria-label="第 484 行"> 484</a> [What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]</span>
+<span id="L485"><a href="#L485" aria-label="第 485 行"> 485</a> </span>
+<span id="L486"><a href="#L486" aria-label="第 486 行"> 486</a> ## Constraints &amp; Preferences</span>
+<span id="L487"><a href="#L487" aria-label="第 487 行"> 487</a> - [Any constraints, preferences, or requirements mentioned by user]</span>
+<span id="L488"><a href="#L488" aria-label="第 488 行"> 488</a> - [Or &quot;(none)&quot; if none were mentioned]</span>
+<span id="L489"><a href="#L489" aria-label="第 489 行"> 489</a> </span>
+<span id="L490"><a href="#L490" aria-label="第 490 行"> 490</a> ## Progress</span>
+<span id="L491"><a href="#L491" aria-label="第 491 行"> 491</a> ### Done</span>
+<span id="L492"><a href="#L492" aria-label="第 492 行"> 492</a> - [x] [Completed tasks/changes]</span>
+<span id="L493"><a href="#L493" aria-label="第 493 行"> 493</a> </span>
+<span id="L494"><a href="#L494" aria-label="第 494 行"> 494</a> ### In Progress</span>
+<span id="L495"><a href="#L495" aria-label="第 495 行"> 495</a> - [ ] [Current work]</span>
+<span id="L496"><a href="#L496" aria-label="第 496 行"> 496</a> </span>
+<span id="L497"><a href="#L497" aria-label="第 497 行"> 497</a> ### Blocked</span>
+<span id="L498"><a href="#L498" aria-label="第 498 行"> 498</a> - [Issues preventing progress, if any]</span>
+<span id="L499"><a href="#L499" aria-label="第 499 行"> 499</a> </span>
+<span id="L500"><a href="#L500" aria-label="第 500 行"> 500</a> ## Key Decisions</span>
+<span id="L501"><a href="#L501" aria-label="第 501 行"> 501</a> - **[Decision]**: [Brief rationale]</span>
+<span id="L502"><a href="#L502" aria-label="第 502 行"> 502</a> </span>
+<span id="L503"><a href="#L503" aria-label="第 503 行"> 503</a> ## Next Steps</span>
+<span id="L504"><a href="#L504" aria-label="第 504 行"> 504</a> 1. [Ordered list of what should happen next]</span>
+<span id="L505"><a href="#L505" aria-label="第 505 行"> 505</a> </span>
+<span id="L506"><a href="#L506" aria-label="第 506 行"> 506</a> ## Critical Context</span>
+<span id="L507"><a href="#L507" aria-label="第 507 行"> 507</a> - [Any data, examples, or references needed to continue]</span>
+<span id="L508"><a href="#L508" aria-label="第 508 行"> 508</a> - [Or &quot;(none)&quot; if not applicable]</span>
+<span id="L509"><a href="#L509" aria-label="第 509 行"> 509</a> </span>
+<span id="L510"><a href="#L510" aria-label="第 510 行"> 510</a> Keep each section concise. Preserve exact file paths, function names, and error messages.`;</span>
+<span id="L511"><a href="#L511" aria-label="第 511 行"> 511</a> </span>
+<span id="L512"><a href="#L512" aria-label="第 512 行"> 512</a> const UPDATE_SUMMARIZATION_INSTRUCTIONS = `Update the existing structured summary with new information. RULES:</span>
+<span id="L513"><a href="#L513" aria-label="第 513 行"> 513</a> - PRESERVE all existing information from the previous summary</span>
+<span id="L514"><a href="#L514" aria-label="第 514 行"> 514</a> - ADD new progress, decisions, and context from the new messages</span>
+<span id="L515"><a href="#L515" aria-label="第 515 行"> 515</a> - UPDATE the Progress section: move items from &quot;In Progress&quot; to &quot;Done&quot; when completed</span>
+<span id="L516"><a href="#L516" aria-label="第 516 行"> 516</a> - UPDATE &quot;Next Steps&quot; based on what was accomplished</span>
+<span id="L517"><a href="#L517" aria-label="第 517 行"> 517</a> - PRESERVE exact file paths, function names, and error messages</span>
+<span id="L518"><a href="#L518" aria-label="第 518 行"> 518</a> - If something is no longer relevant, you may remove it</span>
+<span id="L519"><a href="#L519" aria-label="第 519 行"> 519</a> </span>
+<span id="L520"><a href="#L520" aria-label="第 520 行"> 520</a> Use this EXACT format:</span>
+<span id="L521"><a href="#L521" aria-label="第 521 行"> 521</a> </span>
+<span id="L522"><a href="#L522" aria-label="第 522 行"> 522</a> ## Goal</span>
+<span id="L523"><a href="#L523" aria-label="第 523 行"> 523</a> [Preserve existing goals, add new ones if the task expanded]</span>
+<span id="L524"><a href="#L524" aria-label="第 524 行"> 524</a> </span>
+<span id="L525"><a href="#L525" aria-label="第 525 行"> 525</a> ## Constraints &amp; Preferences</span>
+<span id="L526"><a href="#L526" aria-label="第 526 行"> 526</a> - [Preserve existing, add new ones discovered]</span>
+<span id="L527"><a href="#L527" aria-label="第 527 行"> 527</a> </span>
+<span id="L528"><a href="#L528" aria-label="第 528 行"> 528</a> ## Progress</span>
+<span id="L529"><a href="#L529" aria-label="第 529 行"> 529</a> ### Done</span>
+<span id="L530"><a href="#L530" aria-label="第 530 行"> 530</a> - [x] [Include previously done items AND newly completed items]</span>
+<span id="L531"><a href="#L531" aria-label="第 531 行"> 531</a> </span>
+<span id="L532"><a href="#L532" aria-label="第 532 行"> 532</a> ### In Progress</span>
+<span id="L533"><a href="#L533" aria-label="第 533 行"> 533</a> - [ ] [Current work - update based on progress]</span>
+<span id="L534"><a href="#L534" aria-label="第 534 行"> 534</a> </span>
+<span id="L535"><a href="#L535" aria-label="第 535 行"> 535</a> ### Blocked</span>
+<span id="L536"><a href="#L536" aria-label="第 536 行"> 536</a> - [Current blockers - remove if resolved]</span>
+<span id="L537"><a href="#L537" aria-label="第 537 行"> 537</a> </span>
+<span id="L538"><a href="#L538" aria-label="第 538 行"> 538</a> ## Key Decisions</span>
+<span id="L539"><a href="#L539" aria-label="第 539 行"> 539</a> - **[Decision]**: [Brief rationale] (preserve all previous, add new)</span>
+<span id="L540"><a href="#L540" aria-label="第 540 行"> 540</a> </span>
+<span id="L541"><a href="#L541" aria-label="第 541 行"> 541</a> ## Next Steps</span>
+<span id="L542"><a href="#L542" aria-label="第 542 行"> 542</a> 1. [Update based on current state]</span>
+<span id="L543"><a href="#L543" aria-label="第 543 行"> 543</a> </span>
+<span id="L544"><a href="#L544" aria-label="第 544 行"> 544</a> ## Critical Context</span>
+<span id="L545"><a href="#L545" aria-label="第 545 行"> 545</a> - [Preserve important context, add new if needed]</span>
+<span id="L546"><a href="#L546" aria-label="第 546 行"> 546</a> </span>
+<span id="L547"><a href="#L547" aria-label="第 547 行"> 547</a> Keep each section concise. Preserve exact file paths, function names, and error messages.`;</span>
+<span id="L548"><a href="#L548" aria-label="第 548 行"> 548</a> </span>
+<span id="L549"><a href="#L549" aria-label="第 549 行"> 549</a> const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in &lt;previous-summary&gt; tags.</span>
+<span id="L550"><a href="#L550" aria-label="第 550 行"> 550</a> </span>
+<span id="L551"><a href="#L551" aria-label="第 551 行"> 551</a> ${UPDATE_SUMMARIZATION_INSTRUCTIONS}`;</span>
+<span id="L552"><a href="#L552" aria-label="第 552 行"> 552</a> </span>
+<span id="L553"><a href="#L553" aria-label="第 553 行"> 553</a> /**</span>
+<span id="L554"><a href="#L554" aria-label="第 554 行"> 554</a>  * Returns an error message when a summarization response cannot safely be persisted.</span>
+<span id="L555"><a href="#L555" aria-label="第 555 行"> 555</a>  * A length stop contains partial text and must not become a session checkpoint.</span>
+<span id="L556"><a href="#L556" aria-label="第 556 行"> 556</a>  */</span>
+<span id="L557"><a href="#L557" aria-label="第 557 行"> 557</a> export function getSummarizationFailure(response: AssistantMessage, label: string): string | undefined {</span>
+<span id="L558"><a href="#L558" aria-label="第 558 行"> 558</a> 	if (response.stopReason === &quot;error&quot;) {</span>
+<span id="L559"><a href="#L559" aria-label="第 559 行"> 559</a> 		return `${label} failed: ${response.errorMessage || &quot;Unknown error&quot;}`;</span>
+<span id="L560"><a href="#L560" aria-label="第 560 行"> 560</a> 	}</span>
+<span id="L561"><a href="#L561" aria-label="第 561 行"> 561</a> 	if (response.stopReason === &quot;length&quot;) {</span>
+<span id="L562"><a href="#L562" aria-label="第 562 行"> 562</a> 		return `${label} failed: generation hit the token cap and the summary is incomplete`;</span>
+<span id="L563"><a href="#L563" aria-label="第 563 行"> 563</a> 	}</span>
+<span id="L564"><a href="#L564" aria-label="第 564 行"> 564</a> 	return undefined;</span>
+<span id="L565"><a href="#L565" aria-label="第 565 行"> 565</a> }</span>
+<span id="L566"><a href="#L566" aria-label="第 566 行"> 566</a> </span>
+<span id="L567"><a href="#L567" aria-label="第 567 行"> 567</a> function createSummarizationOptions(</span>
+<span id="L568"><a href="#L568" aria-label="第 568 行"> 568</a> 	model: Model&lt;any&gt;,</span>
+<span id="L569"><a href="#L569" aria-label="第 569 行"> 569</a> 	maxTokens: number,</span>
+<span id="L570"><a href="#L570" aria-label="第 570 行"> 570</a> 	apiKey: string | undefined,</span>
+<span id="L571"><a href="#L571" aria-label="第 571 行"> 571</a> 	headers: Record&lt;string, string&gt; | undefined,</span>
+<span id="L572"><a href="#L572" aria-label="第 572 行"> 572</a> 	env: Record&lt;string, string&gt; | undefined,</span>
+<span id="L573"><a href="#L573" aria-label="第 573 行"> 573</a> 	signal: AbortSignal | undefined,</span>
+<span id="L574"><a href="#L574" aria-label="第 574 行"> 574</a> 	thinkingLevel: ThinkingLevel | undefined,</span>
+<span id="L575"><a href="#L575" aria-label="第 575 行"> 575</a> 	sessionId: string | undefined,</span>
+<span id="L576"><a href="#L576" aria-label="第 576 行"> 576</a> ): SimpleStreamOptions {</span>
+<span id="L577"><a href="#L577" aria-label="第 577 行"> 577</a> 	const options: SimpleStreamOptions = { maxTokens, signal, apiKey, headers, env, sessionId };</span>
+<span id="L578"><a href="#L578" aria-label="第 578 行"> 578</a> 	if (model.reasoning &amp;&amp; thinkingLevel &amp;&amp; thinkingLevel !== &quot;off&quot;) {</span>
+<span id="L579"><a href="#L579" aria-label="第 579 行"> 579</a> 		options.reasoning = thinkingLevel;</span>
+<span id="L580"><a href="#L580" aria-label="第 580 行"> 580</a> 	}</span>
+<span id="L581"><a href="#L581" aria-label="第 581 行"> 581</a> 	return options;</span>
+<span id="L582"><a href="#L582" aria-label="第 582 行"> 582</a> }</span>
+<span id="L583"><a href="#L583" aria-label="第 583 行"> 583</a> </span>
+<span id="L584"><a href="#L584" aria-label="第 584 行"> 584</a> /**</span>
+<span id="L585"><a href="#L585" aria-label="第 585 行"> 585</a>  * Shared choke point for every compaction/branch-summary summarization call. Wraps the</span>
+<span id="L586"><a href="#L586" aria-label="第 586 行"> 586</a>  * single LLM call in {@link retryAssistantCall} so transient stream drops (e.g.</span>
+<span id="L587"><a href="#L587" aria-label="第 587 行"> 587</a>  * `terminated`, socket close) honor the configured retry policy instead of failing</span>
+<span id="L588"><a href="#L588" aria-label="第 588 行"> 588</a>  * the whole compaction on the first attempt. Deterministic errors and aborts return</span>
+<span id="L589"><a href="#L589" aria-label="第 589 行"> 589</a>  * immediately (see {@link retryAssistantCall}).</span>
+<span id="L590"><a href="#L590" aria-label="第 590 行"> 590</a>  */</span>
+<span id="L591"><a href="#L591" aria-label="第 591 行"> 591</a> export async function completeSummarization(</span>
+<span id="L592"><a href="#L592" aria-label="第 592 行"> 592</a> 	model: Model&lt;any&gt;,</span>
+<span id="L593"><a href="#L593" aria-label="第 593 行"> 593</a> 	context: TranscriptContext,</span>
+<span id="L594"><a href="#L594" aria-label="第 594 行"> 594</a> 	options: SimpleStreamOptions,</span>
+<span id="L595"><a href="#L595" aria-label="第 595 行"> 595</a> 	streamFn?: StreamFn,</span>
+<span id="L596"><a href="#L596" aria-label="第 596 行"> 596</a> 	retry?: RetryPolicy,</span>
+<span id="L597"><a href="#L597" aria-label="第 597 行"> 597</a> 	callbacks?: RetryCallbacks,</span>
+<span id="L598"><a href="#L598" aria-label="第 598 行"> 598</a> ): Promise&lt;AssistantMessage&gt; {</span>
+<span id="L599"><a href="#L599" aria-label="第 599 行"> 599</a> 	// Avoid cache writes for one-off summaries. Reuse caller-supplied routing when available;</span>
+<span id="L600"><a href="#L600" aria-label="第 600 行"> 600</a> 	// callers without a session ID, including branch summaries, receive a fresh routing ID.</span>
+<span id="L601"><a href="#L601" aria-label="第 601 行"> 601</a> 	const requestOptions: SimpleStreamOptions = {</span>
+<span id="L602"><a href="#L602" aria-label="第 602 行"> 602</a> 		...options,</span>
+<span id="L603"><a href="#L603" aria-label="第 603 行"> 603</a> 		cacheRetention: &quot;none&quot;,</span>
+<span id="L604"><a href="#L604" aria-label="第 604 行"> 604</a> 		sessionId: options.sessionId ?? uuidv7(),</span>
+<span id="L605"><a href="#L605" aria-label="第 605 行"> 605</a> 	};</span>
+<span id="L606"><a href="#L606" aria-label="第 606 行"> 606</a> 	const produce = async (): Promise&lt;AssistantMessage&gt; =&gt;</span>
+<span id="L607"><a href="#L607" aria-label="第 607 行"> 607</a> 		streamFn</span>
+<span id="L608"><a href="#L608" aria-label="第 608 行"> 608</a> 			? (await streamFn(model, context, requestOptions)).result()</span>
+<span id="L609"><a href="#L609" aria-label="第 609 行"> 609</a> 			: completeSimple(model, context, requestOptions);</span>
+<span id="L610"><a href="#L610" aria-label="第 610 行"> 610</a> 	return retryAssistantCall(produce, retry, requestOptions.signal, callbacks);</span>
+<span id="L611"><a href="#L611" aria-label="第 611 行"> 611</a> }</span>
+<span id="L612"><a href="#L612" aria-label="第 612 行"> 612</a> </span>
+<span id="L613"><a href="#L613" aria-label="第 613 行"> 613</a> /**</span>
+<span id="L614"><a href="#L614" aria-label="第 614 行"> 614</a>  * Generate a summary of the conversation using the LLM.</span>
+<span id="L615"><a href="#L615" aria-label="第 615 行"> 615</a>  * If previousSummary is provided, uses the update prompt to merge.</span>
+<span id="L616"><a href="#L616" aria-label="第 616 行"> 616</a>  */</span>
+<span id="L617"><a href="#L617" aria-label="第 617 行"> 617</a> export async function generateSummary(</span>
+<span id="L618"><a href="#L618" aria-label="第 618 行"> 618</a> 	currentMessages: AgentMessage[],</span>
+<span id="L619"><a href="#L619" aria-label="第 619 行"> 619</a> 	model: Model&lt;any&gt;,</span>
+<span id="L620"><a href="#L620" aria-label="第 620 行"> 620</a> 	reserveTokens: number,</span>
+<span id="L621"><a href="#L621" aria-label="第 621 行"> 621</a> 	apiKey: string | undefined,</span>
+<span id="L622"><a href="#L622" aria-label="第 622 行"> 622</a> 	headers?: Record&lt;string, string&gt;,</span>
+<span id="L623"><a href="#L623" aria-label="第 623 行"> 623</a> 	signal?: AbortSignal,</span>
+<span id="L624"><a href="#L624" aria-label="第 624 行"> 624</a> 	customInstructions?: string,</span>
+<span id="L625"><a href="#L625" aria-label="第 625 行"> 625</a> 	previousSummary?: string,</span>
+<span id="L626"><a href="#L626" aria-label="第 626 行"> 626</a> 	thinkingLevel?: ThinkingLevel,</span>
+<span id="L627"><a href="#L627" aria-label="第 627 行"> 627</a> 	streamFn?: StreamFn,</span>
+<span id="L628"><a href="#L628" aria-label="第 628 行"> 628</a> 	env?: Record&lt;string, string&gt;,</span>
+<span id="L629"><a href="#L629" aria-label="第 629 行"> 629</a> 	retry?: RetryPolicy,</span>
+<span id="L630"><a href="#L630" aria-label="第 630 行"> 630</a> 	callbacks?: RetryCallbacks,</span>
+<span id="L631"><a href="#L631" aria-label="第 631 行"> 631</a> 	sessionId?: string,</span>
+<span id="L632"><a href="#L632" aria-label="第 632 行"> 632</a> ): Promise&lt;string&gt; {</span>
+<span id="L633"><a href="#L633" aria-label="第 633 行"> 633</a> 	return (</span>
+<span id="L634"><a href="#L634" aria-label="第 634 行"> 634</a> 		await generateSummaryWithUsage(</span>
+<span id="L635"><a href="#L635" aria-label="第 635 行"> 635</a> 			currentMessages,</span>
+<span id="L636"><a href="#L636" aria-label="第 636 行"> 636</a> 			model,</span>
+<span id="L637"><a href="#L637" aria-label="第 637 行"> 637</a> 			reserveTokens,</span>
+<span id="L638"><a href="#L638" aria-label="第 638 行"> 638</a> 			apiKey,</span>
+<span id="L639"><a href="#L639" aria-label="第 639 行"> 639</a> 			headers,</span>
+<span id="L640"><a href="#L640" aria-label="第 640 行"> 640</a> 			signal,</span>
+<span id="L641"><a href="#L641" aria-label="第 641 行"> 641</a> 			customInstructions,</span>
+<span id="L642"><a href="#L642" aria-label="第 642 行"> 642</a> 			previousSummary,</span>
+<span id="L643"><a href="#L643" aria-label="第 643 行"> 643</a> 			thinkingLevel,</span>
+<span id="L644"><a href="#L644" aria-label="第 644 行"> 644</a> 			streamFn,</span>
+<span id="L645"><a href="#L645" aria-label="第 645 行"> 645</a> 			env,</span>
+<span id="L646"><a href="#L646" aria-label="第 646 行"> 646</a> 			retry,</span>
+<span id="L647"><a href="#L647" aria-label="第 647 行"> 647</a> 			callbacks,</span>
+<span id="L648"><a href="#L648" aria-label="第 648 行"> 648</a> 			sessionId,</span>
+<span id="L649"><a href="#L649" aria-label="第 649 行"> 649</a> 		)</span>
+<span id="L650"><a href="#L650" aria-label="第 650 行"> 650</a> 	).text;</span>
+<span id="L651"><a href="#L651" aria-label="第 651 行"> 651</a> }</span>
+<span id="L652"><a href="#L652" aria-label="第 652 行"> 652</a> </span>
+<span id="L653"><a href="#L653" aria-label="第 653 行"> 653</a> /** Build the provider context for a standalone summary request. */</span>
+<span id="L654"><a href="#L654" aria-label="第 654 行"> 654</a> function buildSummarizationContext(promptText: string): TranscriptContext {</span>
+<span id="L655"><a href="#L655" aria-label="第 655 行"> 655</a> 	return normalizeContext({</span>
+<span id="L656"><a href="#L656" aria-label="第 656 行"> 656</a> 		systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,</span>
+<span id="L657"><a href="#L657" aria-label="第 657 行"> 657</a> 		messages: [</span>
+<span id="L658"><a href="#L658" aria-label="第 658 行"> 658</a> 			{</span>
+<span id="L659"><a href="#L659" aria-label="第 659 行"> 659</a> 				role: &quot;user&quot;,</span>
+<span id="L660"><a href="#L660" aria-label="第 660 行"> 660</a> 				content: [{ type: &quot;text&quot;, text: promptText }],</span>
+<span id="L661"><a href="#L661" aria-label="第 661 行"> 661</a> 				timestamp: Date.now(),</span>
+<span id="L662"><a href="#L662" aria-label="第 662 行"> 662</a> 			},</span>
+<span id="L663"><a href="#L663" aria-label="第 663 行"> 663</a> 		],</span>
+<span id="L664"><a href="#L664" aria-label="第 664 行"> 664</a> 	});</span>
+<span id="L665"><a href="#L665" aria-label="第 665 行"> 665</a> }</span>
+<span id="L666"><a href="#L666" aria-label="第 666 行"> 666</a> </span>
+<span id="L667"><a href="#L667" aria-label="第 667 行"> 667</a> /** Generate or update a conversation summary and return its provider usage. */</span>
+<span id="L668"><a href="#L668" aria-label="第 668 行"> 668</a> export async function generateSummaryWithUsage(</span>
+<span id="L669"><a href="#L669" aria-label="第 669 行"> 669</a> 	currentMessages: AgentMessage[],</span>
+<span id="L670"><a href="#L670" aria-label="第 670 行"> 670</a> 	model: Model&lt;any&gt;,</span>
+<span id="L671"><a href="#L671" aria-label="第 671 行"> 671</a> 	reserveTokens: number,</span>
+<span id="L672"><a href="#L672" aria-label="第 672 行"> 672</a> 	apiKey: string | undefined,</span>
+<span id="L673"><a href="#L673" aria-label="第 673 行"> 673</a> 	headers?: Record&lt;string, string&gt;,</span>
+<span id="L674"><a href="#L674" aria-label="第 674 行"> 674</a> 	signal?: AbortSignal,</span>
+<span id="L675"><a href="#L675" aria-label="第 675 行"> 675</a> 	customInstructions?: string,</span>
+<span id="L676"><a href="#L676" aria-label="第 676 行"> 676</a> 	previousSummary?: string,</span>
+<span id="L677"><a href="#L677" aria-label="第 677 行"> 677</a> 	thinkingLevel?: ThinkingLevel,</span>
+<span id="L678"><a href="#L678" aria-label="第 678 行"> 678</a> 	streamFn?: StreamFn,</span>
+<span id="L679"><a href="#L679" aria-label="第 679 行"> 679</a> 	env?: Record&lt;string, string&gt;,</span>
+<span id="L680"><a href="#L680" aria-label="第 680 行"> 680</a> 	retry?: RetryPolicy,</span>
+<span id="L681"><a href="#L681" aria-label="第 681 行"> 681</a> 	callbacks?: RetryCallbacks,</span>
+<span id="L682"><a href="#L682" aria-label="第 682 行"> 682</a> 	sessionId?: string,</span>
+<span id="L683"><a href="#L683" aria-label="第 683 行"> 683</a> ): Promise&lt;{ text: string; usage: Usage }&gt; {</span>
+<span id="L684"><a href="#L684" aria-label="第 684 行"> 684</a> 	const maxTokens = Math.min(</span>
+<span id="L685"><a href="#L685" aria-label="第 685 行"> 685</a> 		Math.floor(0.8 * reserveTokens),</span>
+<span id="L686"><a href="#L686" aria-label="第 686 行"> 686</a> 		model.maxTokens &gt; 0 ? model.maxTokens : Number.POSITIVE_INFINITY,</span>
+<span id="L687"><a href="#L687" aria-label="第 687 行"> 687</a> 	);</span>
+<span id="L688"><a href="#L688" aria-label="第 688 行"> 688</a> </span>
+<span id="L689"><a href="#L689" aria-label="第 689 行"> 689</a> 	// Use update prompt if we have a previous summary, otherwise initial prompt</span>
+<span id="L690"><a href="#L690" aria-label="第 690 行"> 690</a> 	let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;</span>
+<span id="L691"><a href="#L691" aria-label="第 691 行"> 691</a> 	if (customInstructions) {</span>
+<span id="L692"><a href="#L692" aria-label="第 692 行"> 692</a> 		basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;</span>
+<span id="L693"><a href="#L693" aria-label="第 693 行"> 693</a> 	}</span>
+<span id="L694"><a href="#L694" aria-label="第 694 行"> 694</a> </span>
+<span id="L695"><a href="#L695" aria-label="第 695 行"> 695</a> 	// Serialize conversation to text so model doesn&#x27;t try to continue it</span>
+<span id="L696"><a href="#L696" aria-label="第 696 行"> 696</a> 	// Convert to LLM messages first (handles custom types like bashExecution, custom, etc.)</span>
+<span id="L697"><a href="#L697" aria-label="第 697 行"> 697</a> 	const llmMessages = convertToLlm(currentMessages);</span>
+<span id="L698"><a href="#L698" aria-label="第 698 行"> 698</a> 	const conversationText = serializeConversation(llmMessages);</span>
+<span id="L699"><a href="#L699" aria-label="第 699 行"> 699</a> </span>
+<span id="L700"><a href="#L700" aria-label="第 700 行"> 700</a> 	// Build the prompt with conversation wrapped in tags</span>
+<span id="L701"><a href="#L701" aria-label="第 701 行"> 701</a> 	let promptText = `&lt;conversation&gt;\n${conversationText}\n&lt;/conversation&gt;\n\n`;</span>
+<span id="L702"><a href="#L702" aria-label="第 702 行"> 702</a> 	if (previousSummary) {</span>
+<span id="L703"><a href="#L703" aria-label="第 703 行"> 703</a> 		promptText += `&lt;previous-summary&gt;\n${previousSummary}\n&lt;/previous-summary&gt;\n\n`;</span>
+<span id="L704"><a href="#L704" aria-label="第 704 行"> 704</a> 	}</span>
+<span id="L705"><a href="#L705" aria-label="第 705 行"> 705</a> 	promptText += basePrompt;</span>
+<span id="L706"><a href="#L706" aria-label="第 706 行"> 706</a> </span>
+<span id="L707"><a href="#L707" aria-label="第 707 行"> 707</a> 	const completionOptions = createSummarizationOptions(</span>
+<span id="L708"><a href="#L708" aria-label="第 708 行"> 708</a> 		model,</span>
+<span id="L709"><a href="#L709" aria-label="第 709 行"> 709</a> 		maxTokens,</span>
+<span id="L710"><a href="#L710" aria-label="第 710 行"> 710</a> 		apiKey,</span>
+<span id="L711"><a href="#L711" aria-label="第 711 行"> 711</a> 		headers,</span>
+<span id="L712"><a href="#L712" aria-label="第 712 行"> 712</a> 		env,</span>
+<span id="L713"><a href="#L713" aria-label="第 713 行"> 713</a> 		signal,</span>
+<span id="L714"><a href="#L714" aria-label="第 714 行"> 714</a> 		thinkingLevel,</span>
+<span id="L715"><a href="#L715" aria-label="第 715 行"> 715</a> 		sessionId,</span>
+<span id="L716"><a href="#L716" aria-label="第 716 行"> 716</a> 	);</span>
+<span id="L717"><a href="#L717" aria-label="第 717 行"> 717</a> </span>
+<span id="L718"><a href="#L718" aria-label="第 718 行"> 718</a> 	const response = await completeSummarization(</span>
+<span id="L719"><a href="#L719" aria-label="第 719 行"> 719</a> 		model,</span>
+<span id="L720"><a href="#L720" aria-label="第 720 行"> 720</a> 		buildSummarizationContext(promptText),</span>
+<span id="L721"><a href="#L721" aria-label="第 721 行"> 721</a> 		completionOptions,</span>
+<span id="L722"><a href="#L722" aria-label="第 722 行"> 722</a> 		streamFn,</span>
+<span id="L723"><a href="#L723" aria-label="第 723 行"> 723</a> 		retry,</span>
+<span id="L724"><a href="#L724" aria-label="第 724 行"> 724</a> 		callbacks,</span>
+<span id="L725"><a href="#L725" aria-label="第 725 行"> 725</a> 	);</span>
+<span id="L726"><a href="#L726" aria-label="第 726 行"> 726</a> </span>
+<span id="L727"><a href="#L727" aria-label="第 727 行"> 727</a> 	const failure = getSummarizationFailure(response, &quot;Summarization&quot;);</span>
+<span id="L728"><a href="#L728" aria-label="第 728 行"> 728</a> 	if (failure) {</span>
+<span id="L729"><a href="#L729" aria-label="第 729 行"> 729</a> 		throw new Error(failure);</span>
+<span id="L730"><a href="#L730" aria-label="第 730 行"> 730</a> 	}</span>
+<span id="L731"><a href="#L731" aria-label="第 731 行"> 731</a> 	if (response.content.some((block) =&gt; block.type === &quot;toolCall&quot;)) {</span>
+<span id="L732"><a href="#L732" aria-label="第 732 行"> 732</a> 		throw new Error(&quot;Summarization attempted to call a tool&quot;);</span>
+<span id="L733"><a href="#L733" aria-label="第 733 行"> 733</a> 	}</span>
+<span id="L734"><a href="#L734" aria-label="第 734 行"> 734</a> </span>
+<span id="L735"><a href="#L735" aria-label="第 735 行"> 735</a> 	const textContent = contentText(response.content);</span>
+<span id="L736"><a href="#L736" aria-label="第 736 行"> 736</a> </span>
+<span id="L737"><a href="#L737" aria-label="第 737 行"> 737</a> 	return { text: textContent, usage: response.usage };</span>
+<span id="L738"><a href="#L738" aria-label="第 738 行"> 738</a> }</span>
+<span id="L739"><a href="#L739" aria-label="第 739 行"> 739</a> </span>
+<span id="L740"><a href="#L740" aria-label="第 740 行"> 740</a> // ============================================================================</span>
+<span id="L741"><a href="#L741" aria-label="第 741 行"> 741</a> // Compaction Preparation (for extensions)</span>
+<span id="L742"><a href="#L742" aria-label="第 742 行"> 742</a> // ============================================================================</span>
+<span id="L743"><a href="#L743" aria-label="第 743 行"> 743</a> </span>
+<span id="L744"><a href="#L744" aria-label="第 744 行"> 744</a> export interface CompactionPreparation {</span>
+<span id="L745"><a href="#L745" aria-label="第 745 行"> 745</a> 	/** UUID of first entry to keep */</span>
+<span id="L746"><a href="#L746" aria-label="第 746 行"> 746</a> 	firstKeptEntryId: string;</span>
+<span id="L747"><a href="#L747" aria-label="第 747 行"> 747</a> 	/** Messages that will be summarized and discarded */</span>
+<span id="L748"><a href="#L748" aria-label="第 748 行"> 748</a> 	messagesToSummarize: AgentMessage[];</span>
+<span id="L749"><a href="#L749" aria-label="第 749 行"> 749</a> 	/** Messages that will be turned into turn prefix summary (if splitting) */</span>
+<span id="L750"><a href="#L750" aria-label="第 750 行"> 750</a> 	turnPrefixMessages: AgentMessage[];</span>
+<span id="L751"><a href="#L751" aria-label="第 751 行"> 751</a> 	/** Whether this is a split turn (cut point in middle of turn) */</span>
+<span id="L752"><a href="#L752" aria-label="第 752 行"> 752</a> 	isSplitTurn: boolean;</span>
+<span id="L753"><a href="#L753" aria-label="第 753 行"> 753</a> 	tokensBefore: number;</span>
+<span id="L754"><a href="#L754" aria-label="第 754 行"> 754</a> 	/** Summary from previous compaction, for iterative update */</span>
+<span id="L755"><a href="#L755" aria-label="第 755 行"> 755</a> 	previousSummary?: string;</span>
+<span id="L756"><a href="#L756" aria-label="第 756 行"> 756</a> 	/** File operations extracted from messagesToSummarize */</span>
+<span id="L757"><a href="#L757" aria-label="第 757 行"> 757</a> 	fileOps: FileOperations;</span>
+<span id="L758"><a href="#L758" aria-label="第 758 行"> 758</a> 	/** Compaction settions from settings.jsonl	*/</span>
+<span id="L759"><a href="#L759" aria-label="第 759 行"> 759</a> 	settings: CompactionSettings;</span>
+<span id="L760"><a href="#L760" aria-label="第 760 行"> 760</a> }</span>
+<span id="L761"><a href="#L761" aria-label="第 761 行"> 761</a> </span>
+<span id="L762"><a href="#L762" aria-label="第 762 行"> 762</a> export function prepareCompaction(</span>
+<span id="L763"><a href="#L763" aria-label="第 763 行"> 763</a> 	pathEntries: SessionEntry[],</span>
+<span id="L764"><a href="#L764" aria-label="第 764 行"> 764</a> 	settings: CompactionSettings,</span>
+<span id="L765"><a href="#L765" aria-label="第 765 行"> 765</a> ): CompactionPreparation | undefined {</span>
+<span id="L766"><a href="#L766" aria-label="第 766 行"> 766</a> 	if (pathEntries.length &gt; 0 &amp;&amp; pathEntries[pathEntries.length - 1].type === &quot;compaction&quot;) {</span>
+<span id="L767"><a href="#L767" aria-label="第 767 行"> 767</a> 		return undefined;</span>
+<span id="L768"><a href="#L768" aria-label="第 768 行"> 768</a> 	}</span>
+<span id="L769"><a href="#L769" aria-label="第 769 行"> 769</a> </span>
+<span id="L770"><a href="#L770" aria-label="第 770 行"> 770</a> 	let prevCompactionIndex = -1;</span>
+<span id="L771"><a href="#L771" aria-label="第 771 行"> 771</a> 	for (let i = pathEntries.length - 1; i &gt;= 0; i--) {</span>
+<span id="L772"><a href="#L772" aria-label="第 772 行"> 772</a> 		if (pathEntries[i].type === &quot;compaction&quot;) {</span>
+<span id="L773"><a href="#L773" aria-label="第 773 行"> 773</a> 			prevCompactionIndex = i;</span>
+<span id="L774"><a href="#L774" aria-label="第 774 行"> 774</a> 			break;</span>
+<span id="L775"><a href="#L775" aria-label="第 775 行"> 775</a> 		}</span>
+<span id="L776"><a href="#L776" aria-label="第 776 行"> 776</a> 	}</span>
+<span id="L777"><a href="#L777" aria-label="第 777 行"> 777</a> </span>
+<span id="L778"><a href="#L778" aria-label="第 778 行"> 778</a> 	let previousSummary: string | undefined;</span>
+<span id="L779"><a href="#L779" aria-label="第 779 行"> 779</a> 	let boundaryStart = 0;</span>
+<span id="L780"><a href="#L780" aria-label="第 780 行"> 780</a> 	if (prevCompactionIndex &gt;= 0) {</span>
+<span id="L781"><a href="#L781" aria-label="第 781 行"> 781</a> 		const prevCompaction = pathEntries[prevCompactionIndex] as CompactionEntry;</span>
+<span id="L782"><a href="#L782" aria-label="第 782 行"> 782</a> 		previousSummary = prevCompaction.summary;</span>
+<span id="L783"><a href="#L783" aria-label="第 783 行"> 783</a> 		const firstKeptEntryIndex = pathEntries.findIndex((entry) =&gt; entry.id === prevCompaction.firstKeptEntryId);</span>
+<span id="L784"><a href="#L784" aria-label="第 784 行"> 784</a> 		boundaryStart = firstKeptEntryIndex &gt;= 0 ? firstKeptEntryIndex : prevCompactionIndex + 1;</span>
+<span id="L785"><a href="#L785" aria-label="第 785 行"> 785</a> 	}</span>
+<span id="L786"><a href="#L786" aria-label="第 786 行"> 786</a> 	const boundaryEnd = pathEntries.length;</span>
+<span id="L787"><a href="#L787" aria-label="第 787 行"> 787</a> </span>
+<span id="L788"><a href="#L788" aria-label="第 788 行"> 788</a> 	const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages).tokens;</span>
+<span id="L789"><a href="#L789" aria-label="第 789 行"> 789</a> </span>
+<span id="L790"><a href="#L790" aria-label="第 790 行"> 790</a> 	const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens);</span>
+<span id="L791"><a href="#L791" aria-label="第 791 行"> 791</a> </span>
+<span id="L792"><a href="#L792" aria-label="第 792 行"> 792</a> 	// Get UUID of first kept entry</span>
+<span id="L793"><a href="#L793" aria-label="第 793 行"> 793</a> 	const firstKeptEntry = pathEntries[cutPoint.firstKeptEntryIndex];</span>
+<span id="L794"><a href="#L794" aria-label="第 794 行"> 794</a> 	if (!firstKeptEntry?.id) {</span>
+<span id="L795"><a href="#L795" aria-label="第 795 行"> 795</a> 		return undefined; // Session needs migration</span>
+<span id="L796"><a href="#L796" aria-label="第 796 行"> 796</a> 	}</span>
+<span id="L797"><a href="#L797" aria-label="第 797 行"> 797</a> 	const firstKeptEntryId = firstKeptEntry.id;</span>
+<span id="L798"><a href="#L798" aria-label="第 798 行"> 798</a> </span>
+<span id="L799"><a href="#L799" aria-label="第 799 行"> 799</a> 	const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;</span>
+<span id="L800"><a href="#L800" aria-label="第 800 行"> 800</a> </span>
+<span id="L801"><a href="#L801" aria-label="第 801 行"> 801</a> 	// Messages to summarize (will be discarded after summary)</span>
+<span id="L802"><a href="#L802" aria-label="第 802 行"> 802</a> 	const messagesToSummarize: AgentMessage[] = [];</span>
+<span id="L803"><a href="#L803" aria-label="第 803 行"> 803</a> 	for (let i = boundaryStart; i &lt; historyEnd; i++) {</span>
+<span id="L804"><a href="#L804" aria-label="第 804 行"> 804</a> 		const msg = getMessageFromEntryForCompaction(pathEntries[i]);</span>
+<span id="L805"><a href="#L805" aria-label="第 805 行"> 805</a> 		if (msg) messagesToSummarize.push(msg);</span>
+<span id="L806"><a href="#L806" aria-label="第 806 行"> 806</a> 	}</span>
+<span id="L807"><a href="#L807" aria-label="第 807 行"> 807</a> </span>
+<span id="L808"><a href="#L808" aria-label="第 808 行"> 808</a> 	// Messages for turn prefix summary (if splitting a turn)</span>
+<span id="L809"><a href="#L809" aria-label="第 809 行"> 809</a> 	const turnPrefixMessages: AgentMessage[] = [];</span>
+<span id="L810"><a href="#L810" aria-label="第 810 行"> 810</a> 	if (cutPoint.isSplitTurn) {</span>
+<span id="L811"><a href="#L811" aria-label="第 811 行"> 811</a> 		for (let i = cutPoint.turnStartIndex; i &lt; cutPoint.firstKeptEntryIndex; i++) {</span>
+<span id="L812"><a href="#L812" aria-label="第 812 行"> 812</a> 			const msg = getMessageFromEntryForCompaction(pathEntries[i]);</span>
+<span id="L813"><a href="#L813" aria-label="第 813 行"> 813</a> 			if (msg) turnPrefixMessages.push(msg);</span>
+<span id="L814"><a href="#L814" aria-label="第 814 行"> 814</a> 		}</span>
+<span id="L815"><a href="#L815" aria-label="第 815 行"> 815</a> 	}</span>
+<span id="L816"><a href="#L816" aria-label="第 816 行"> 816</a> </span>
+<span id="L817"><a href="#L817" aria-label="第 817 行"> 817</a> 	if (messagesToSummarize.length === 0 &amp;&amp; turnPrefixMessages.length === 0) {</span>
+<span id="L818"><a href="#L818" aria-label="第 818 行"> 818</a> 		return undefined;</span>
+<span id="L819"><a href="#L819" aria-label="第 819 行"> 819</a> 	}</span>
+<span id="L820"><a href="#L820" aria-label="第 820 行"> 820</a> </span>
+<span id="L821"><a href="#L821" aria-label="第 821 行"> 821</a> 	// Extract file operations from messages and previous compaction</span>
+<span id="L822"><a href="#L822" aria-label="第 822 行"> 822</a> 	const fileOps = extractFileOperations(messagesToSummarize, pathEntries, prevCompactionIndex);</span>
+<span id="L823"><a href="#L823" aria-label="第 823 行"> 823</a> </span>
+<span id="L824"><a href="#L824" aria-label="第 824 行"> 824</a> 	// Also extract file ops from turn prefix if splitting</span>
+<span id="L825"><a href="#L825" aria-label="第 825 行"> 825</a> 	if (cutPoint.isSplitTurn) {</span>
+<span id="L826"><a href="#L826" aria-label="第 826 行"> 826</a> 		for (const msg of turnPrefixMessages) {</span>
+<span id="L827"><a href="#L827" aria-label="第 827 行"> 827</a> 			extractFileOpsFromMessage(msg, fileOps);</span>
+<span id="L828"><a href="#L828" aria-label="第 828 行"> 828</a> 		}</span>
+<span id="L829"><a href="#L829" aria-label="第 829 行"> 829</a> 	}</span>
+<span id="L830"><a href="#L830" aria-label="第 830 行"> 830</a> </span>
+<span id="L831"><a href="#L831" aria-label="第 831 行"> 831</a> 	return {</span>
+<span id="L832"><a href="#L832" aria-label="第 832 行"> 832</a> 		firstKeptEntryId,</span>
+<span id="L833"><a href="#L833" aria-label="第 833 行"> 833</a> 		messagesToSummarize,</span>
+<span id="L834"><a href="#L834" aria-label="第 834 行"> 834</a> 		turnPrefixMessages,</span>
+<span id="L835"><a href="#L835" aria-label="第 835 行"> 835</a> 		isSplitTurn: cutPoint.isSplitTurn,</span>
+<span id="L836"><a href="#L836" aria-label="第 836 行"> 836</a> 		tokensBefore,</span>
+<span id="L837"><a href="#L837" aria-label="第 837 行"> 837</a> 		previousSummary,</span>
+<span id="L838"><a href="#L838" aria-label="第 838 行"> 838</a> 		fileOps,</span>
+<span id="L839"><a href="#L839" aria-label="第 839 行"> 839</a> 		settings,</span>
+<span id="L840"><a href="#L840" aria-label="第 840 行"> 840</a> 	};</span>
+<span id="L841"><a href="#L841" aria-label="第 841 行"> 841</a> }</span>
+<span id="L842"><a href="#L842" aria-label="第 842 行"> 842</a> </span>
+<span id="L843"><a href="#L843" aria-label="第 843 行"> 843</a> // ============================================================================</span>
+<span id="L844"><a href="#L844" aria-label="第 844 行"> 844</a> // Main compaction function</span>
+<span id="L845"><a href="#L845" aria-label="第 845 行"> 845</a> // ============================================================================</span>
+<span id="L846"><a href="#L846" aria-label="第 846 行"> 846</a> </span>
+<span id="L847"><a href="#L847" aria-label="第 847 行"> 847</a> const TURN_PREFIX_SUMMARIZATION_PROMPT = `This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) is retained.</span>
+<span id="L848"><a href="#L848" aria-label="第 848 行"> 848</a> </span>
+<span id="L849"><a href="#L849" aria-label="第 849 行"> 849</a> Summarize the prefix to provide context for the retained suffix:</span>
+<span id="L850"><a href="#L850" aria-label="第 850 行"> 850</a> </span>
+<span id="L851"><a href="#L851" aria-label="第 851 行"> 851</a> ## Original Request</span>
+<span id="L852"><a href="#L852" aria-label="第 852 行"> 852</a> [What did the user ask for in this turn?]</span>
+<span id="L853"><a href="#L853" aria-label="第 853 行"> 853</a> </span>
+<span id="L854"><a href="#L854" aria-label="第 854 行"> 854</a> ## Early Progress</span>
+<span id="L855"><a href="#L855" aria-label="第 855 行"> 855</a> - [Key decisions and work done in the prefix]</span>
+<span id="L856"><a href="#L856" aria-label="第 856 行"> 856</a> </span>
+<span id="L857"><a href="#L857" aria-label="第 857 行"> 857</a> ## Context for Suffix</span>
+<span id="L858"><a href="#L858" aria-label="第 858 行"> 858</a> - [Information needed to understand the retained recent work]</span>
+<span id="L859"><a href="#L859" aria-label="第 859 行"> 859</a> </span>
+<span id="L860"><a href="#L860" aria-label="第 860 行"> 860</a> Be concise. Focus on what&#x27;s needed to understand the kept suffix.`;</span>
+<span id="L861"><a href="#L861" aria-label="第 861 行"> 861</a> </span>
+<span id="L862"><a href="#L862" aria-label="第 862 行"> 862</a> /**</span>
+<span id="L863"><a href="#L863" aria-label="第 863 行"> 863</a>  * Generate summaries for compaction using prepared data.</span>
+<span id="L864"><a href="#L864" aria-label="第 864 行"> 864</a>  * Returns CompactionResult - SessionManager adds uuid/parentUuid when saving.</span>
+<span id="L865"><a href="#L865" aria-label="第 865 行"> 865</a>  *</span>
+<span id="L866"><a href="#L866" aria-label="第 866 行"> 866</a>  * @param preparation - Pre-calculated preparation from prepareCompaction()</span>
+<span id="L867"><a href="#L867" aria-label="第 867 行"> 867</a>  * @param customInstructions - Optional custom focus for the summary</span>
+<span id="L868"><a href="#L868" aria-label="第 868 行"> 868</a>  * @param sessionId - Optional routing session ID forwarded without enabling prompt caching</span>
+<span id="L869"><a href="#L869" aria-label="第 869 行"> 869</a>  */</span>
+<span id="L870"><a href="#L870" aria-label="第 870 行"> 870</a> export async function compact(</span>
+<span id="L871"><a href="#L871" aria-label="第 871 行"> 871</a> 	preparation: CompactionPreparation,</span>
+<span id="L872"><a href="#L872" aria-label="第 872 行"> 872</a> 	model: Model&lt;any&gt;,</span>
+<span id="L873"><a href="#L873" aria-label="第 873 行"> 873</a> 	apiKey: string | undefined,</span>
+<span id="L874"><a href="#L874" aria-label="第 874 行"> 874</a> 	headers?: Record&lt;string, string&gt;,</span>
+<span id="L875"><a href="#L875" aria-label="第 875 行"> 875</a> 	customInstructions?: string,</span>
+<span id="L876"><a href="#L876" aria-label="第 876 行"> 876</a> 	signal?: AbortSignal,</span>
+<span id="L877"><a href="#L877" aria-label="第 877 行"> 877</a> 	thinkingLevel?: ThinkingLevel,</span>
+<span id="L878"><a href="#L878" aria-label="第 878 行"> 878</a> 	streamFn?: StreamFn,</span>
+<span id="L879"><a href="#L879" aria-label="第 879 行"> 879</a> 	env?: Record&lt;string, string&gt;,</span>
+<span id="L880"><a href="#L880" aria-label="第 880 行"> 880</a> 	retry?: RetryPolicy,</span>
+<span id="L881"><a href="#L881" aria-label="第 881 行"> 881</a> 	callbacks?: RetryCallbacks,</span>
+<span id="L882"><a href="#L882" aria-label="第 882 行"> 882</a> 	sessionId?: string,</span>
+<span id="L883"><a href="#L883" aria-label="第 883 行"> 883</a> ): Promise&lt;CompactionResult&gt; {</span>
+<span id="L884"><a href="#L884" aria-label="第 884 行"> 884</a> 	const {</span>
+<span id="L885"><a href="#L885" aria-label="第 885 行"> 885</a> 		firstKeptEntryId,</span>
+<span id="L886"><a href="#L886" aria-label="第 886 行"> 886</a> 		messagesToSummarize,</span>
+<span id="L887"><a href="#L887" aria-label="第 887 行"> 887</a> 		turnPrefixMessages,</span>
+<span id="L888"><a href="#L888" aria-label="第 888 行"> 888</a> 		isSplitTurn,</span>
+<span id="L889"><a href="#L889" aria-label="第 889 行"> 889</a> 		tokensBefore,</span>
+<span id="L890"><a href="#L890" aria-label="第 890 行"> 890</a> 		previousSummary,</span>
+<span id="L891"><a href="#L891" aria-label="第 891 行"> 891</a> 		fileOps,</span>
+<span id="L892"><a href="#L892" aria-label="第 892 行"> 892</a> 		settings,</span>
+<span id="L893"><a href="#L893" aria-label="第 893 行"> 893</a> 	} = preparation;</span>
+<span id="L894"><a href="#L894" aria-label="第 894 行"> 894</a> </span>
+<span id="L895"><a href="#L895" aria-label="第 895 行"> 895</a> 	// Generate summaries and merge into one</span>
+<span id="L896"><a href="#L896" aria-label="第 896 行"> 896</a> 	let summary: string;</span>
+<span id="L897"><a href="#L897" aria-label="第 897 行"> 897</a> 	let summaryUsage: Usage;</span>
+<span id="L898"><a href="#L898" aria-label="第 898 行"> 898</a> </span>
+<span id="L899"><a href="#L899" aria-label="第 899 行"> 899</a> 	if (isSplitTurn &amp;&amp; turnPrefixMessages.length &gt; 0) {</span>
+<span id="L900"><a href="#L900" aria-label="第 900 行"> 900</a> 		let historyText = previousSummary ?? &quot;No prior history.&quot;;</span>
+<span id="L901"><a href="#L901" aria-label="第 901 行"> 901</a> 		let historyUsage: Usage | undefined;</span>
+<span id="L902"><a href="#L902" aria-label="第 902 行"> 902</a> 		if (messagesToSummarize.length &gt; 0) {</span>
+<span id="L903"><a href="#L903" aria-label="第 903 行"> 903</a> 			const historyResult = await generateSummaryWithUsage(</span>
+<span id="L904"><a href="#L904" aria-label="第 904 行"> 904</a> 				messagesToSummarize,</span>
+<span id="L905"><a href="#L905" aria-label="第 905 行"> 905</a> 				model,</span>
+<span id="L906"><a href="#L906" aria-label="第 906 行"> 906</a> 				settings.reserveTokens,</span>
+<span id="L907"><a href="#L907" aria-label="第 907 行"> 907</a> 				apiKey,</span>
+<span id="L908"><a href="#L908" aria-label="第 908 行"> 908</a> 				headers,</span>
+<span id="L909"><a href="#L909" aria-label="第 909 行"> 909</a> 				signal,</span>
+<span id="L910"><a href="#L910" aria-label="第 910 行"> 910</a> 				customInstructions,</span>
+<span id="L911"><a href="#L911" aria-label="第 911 行"> 911</a> 				previousSummary,</span>
+<span id="L912"><a href="#L912" aria-label="第 912 行"> 912</a> 				thinkingLevel,</span>
+<span id="L913"><a href="#L913" aria-label="第 913 行"> 913</a> 				streamFn,</span>
+<span id="L914"><a href="#L914" aria-label="第 914 行"> 914</a> 				env,</span>
+<span id="L915"><a href="#L915" aria-label="第 915 行"> 915</a> 				retry,</span>
+<span id="L916"><a href="#L916" aria-label="第 916 行"> 916</a> 				callbacks,</span>
+<span id="L917"><a href="#L917" aria-label="第 917 行"> 917</a> 				sessionId,</span>
+<span id="L918"><a href="#L918" aria-label="第 918 行"> 918</a> 			);</span>
+<span id="L919"><a href="#L919" aria-label="第 919 行"> 919</a> 			historyText = historyResult.text;</span>
+<span id="L920"><a href="#L920" aria-label="第 920 行"> 920</a> 			historyUsage = historyResult.usage;</span>
+<span id="L921"><a href="#L921" aria-label="第 921 行"> 921</a> 		}</span>
+<span id="L922"><a href="#L922" aria-label="第 922 行"> 922</a> 		const turnPrefixResult = await generateTurnPrefixSummary(</span>
+<span id="L923"><a href="#L923" aria-label="第 923 行"> 923</a> 			turnPrefixMessages,</span>
+<span id="L924"><a href="#L924" aria-label="第 924 行"> 924</a> 			model,</span>
+<span id="L925"><a href="#L925" aria-label="第 925 行"> 925</a> 			settings.reserveTokens,</span>
+<span id="L926"><a href="#L926" aria-label="第 926 行"> 926</a> 			apiKey,</span>
+<span id="L927"><a href="#L927" aria-label="第 927 行"> 927</a> 			headers,</span>
+<span id="L928"><a href="#L928" aria-label="第 928 行"> 928</a> 			env,</span>
+<span id="L929"><a href="#L929" aria-label="第 929 行"> 929</a> 			signal,</span>
+<span id="L930"><a href="#L930" aria-label="第 930 行"> 930</a> 			thinkingLevel,</span>
+<span id="L931"><a href="#L931" aria-label="第 931 行"> 931</a> 			streamFn,</span>
+<span id="L932"><a href="#L932" aria-label="第 932 行"> 932</a> 			retry,</span>
+<span id="L933"><a href="#L933" aria-label="第 933 行"> 933</a> 			callbacks,</span>
+<span id="L934"><a href="#L934" aria-label="第 934 行"> 934</a> 			sessionId,</span>
+<span id="L935"><a href="#L935" aria-label="第 935 行"> 935</a> 		);</span>
+<span id="L936"><a href="#L936" aria-label="第 936 行"> 936</a> 		// Merge into single summary</span>
+<span id="L937"><a href="#L937" aria-label="第 937 行"> 937</a> 		summary = `${historyText}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult.text}`;</span>
+<span id="L938"><a href="#L938" aria-label="第 938 行"> 938</a> 		summaryUsage = historyUsage ? combineUsage(historyUsage, turnPrefixResult.usage) : turnPrefixResult.usage;</span>
+<span id="L939"><a href="#L939" aria-label="第 939 行"> 939</a> 	} else {</span>
+<span id="L940"><a href="#L940" aria-label="第 940 行"> 940</a> 		// Just generate history summary</span>
+<span id="L941"><a href="#L941" aria-label="第 941 行"> 941</a> 		const result = await generateSummaryWithUsage(</span>
+<span id="L942"><a href="#L942" aria-label="第 942 行"> 942</a> 			messagesToSummarize,</span>
+<span id="L943"><a href="#L943" aria-label="第 943 行"> 943</a> 			model,</span>
+<span id="L944"><a href="#L944" aria-label="第 944 行"> 944</a> 			settings.reserveTokens,</span>
+<span id="L945"><a href="#L945" aria-label="第 945 行"> 945</a> 			apiKey,</span>
+<span id="L946"><a href="#L946" aria-label="第 946 行"> 946</a> 			headers,</span>
+<span id="L947"><a href="#L947" aria-label="第 947 行"> 947</a> 			signal,</span>
+<span id="L948"><a href="#L948" aria-label="第 948 行"> 948</a> 			customInstructions,</span>
+<span id="L949"><a href="#L949" aria-label="第 949 行"> 949</a> 			previousSummary,</span>
+<span id="L950"><a href="#L950" aria-label="第 950 行"> 950</a> 			thinkingLevel,</span>
+<span id="L951"><a href="#L951" aria-label="第 951 行"> 951</a> 			streamFn,</span>
+<span id="L952"><a href="#L952" aria-label="第 952 行"> 952</a> 			env,</span>
+<span id="L953"><a href="#L953" aria-label="第 953 行"> 953</a> 			retry,</span>
+<span id="L954"><a href="#L954" aria-label="第 954 行"> 954</a> 			callbacks,</span>
+<span id="L955"><a href="#L955" aria-label="第 955 行"> 955</a> 			sessionId,</span>
+<span id="L956"><a href="#L956" aria-label="第 956 行"> 956</a> 		);</span>
+<span id="L957"><a href="#L957" aria-label="第 957 行"> 957</a> 		summary = result.text;</span>
+<span id="L958"><a href="#L958" aria-label="第 958 行"> 958</a> 		summaryUsage = result.usage;</span>
+<span id="L959"><a href="#L959" aria-label="第 959 行"> 959</a> 	}</span>
+<span id="L960"><a href="#L960" aria-label="第 960 行"> 960</a> </span>
+<span id="L961"><a href="#L961" aria-label="第 961 行"> 961</a> 	// Compute file lists and append to summary</span>
+<span id="L962"><a href="#L962" aria-label="第 962 行"> 962</a> 	const { readFiles, modifiedFiles } = computeFileLists(fileOps);</span>
+<span id="L963"><a href="#L963" aria-label="第 963 行"> 963</a> 	summary += formatFileOperations(readFiles, modifiedFiles);</span>
+<span id="L964"><a href="#L964" aria-label="第 964 行"> 964</a> </span>
+<span id="L965"><a href="#L965" aria-label="第 965 行"> 965</a> 	if (!firstKeptEntryId) {</span>
+<span id="L966"><a href="#L966" aria-label="第 966 行"> 966</a> 		throw new Error(&quot;First kept entry has no UUID - session may need migration&quot;);</span>
+<span id="L967"><a href="#L967" aria-label="第 967 行"> 967</a> 	}</span>
+<span id="L968"><a href="#L968" aria-label="第 968 行"> 968</a> </span>
+<span id="L969"><a href="#L969" aria-label="第 969 行"> 969</a> 	return {</span>
+<span id="L970"><a href="#L970" aria-label="第 970 行"> 970</a> 		summary,</span>
+<span id="L971"><a href="#L971" aria-label="第 971 行"> 971</a> 		firstKeptEntryId,</span>
+<span id="L972"><a href="#L972" aria-label="第 972 行"> 972</a> 		tokensBefore,</span>
+<span id="L973"><a href="#L973" aria-label="第 973 行"> 973</a> 		usage: summaryUsage,</span>
+<span id="L974"><a href="#L974" aria-label="第 974 行"> 974</a> 		details: { readFiles, modifiedFiles } as CompactionDetails,</span>
+<span id="L975"><a href="#L975" aria-label="第 975 行"> 975</a> 	};</span>
+<span id="L976"><a href="#L976" aria-label="第 976 行"> 976</a> }</span>
+<span id="L977"><a href="#L977" aria-label="第 977 行"> 977</a> </span>
+<span id="L978"><a href="#L978" aria-label="第 978 行"> 978</a> /**</span>
+<span id="L979"><a href="#L979" aria-label="第 979 行"> 979</a>  * Generate a summary for a turn prefix (when splitting a turn).</span>
+<span id="L980"><a href="#L980" aria-label="第 980 行"> 980</a>  */</span>
+<span id="L981"><a href="#L981" aria-label="第 981 行"> 981</a> async function generateTurnPrefixSummary(</span>
+<span id="L982"><a href="#L982" aria-label="第 982 行"> 982</a> 	messages: AgentMessage[],</span>
+<span id="L983"><a href="#L983" aria-label="第 983 行"> 983</a> 	model: Model&lt;any&gt;,</span>
+<span id="L984"><a href="#L984" aria-label="第 984 行"> 984</a> 	reserveTokens: number,</span>
+<span id="L985"><a href="#L985" aria-label="第 985 行"> 985</a> 	apiKey: string | undefined,</span>
+<span id="L986"><a href="#L986" aria-label="第 986 行"> 986</a> 	headers?: Record&lt;string, string&gt;,</span>
+<span id="L987"><a href="#L987" aria-label="第 987 行"> 987</a> 	env?: Record&lt;string, string&gt;,</span>
+<span id="L988"><a href="#L988" aria-label="第 988 行"> 988</a> 	signal?: AbortSignal,</span>
+<span id="L989"><a href="#L989" aria-label="第 989 行"> 989</a> 	thinkingLevel?: ThinkingLevel,</span>
+<span id="L990"><a href="#L990" aria-label="第 990 行"> 990</a> 	streamFn?: StreamFn,</span>
+<span id="L991"><a href="#L991" aria-label="第 991 行"> 991</a> 	retry?: RetryPolicy,</span>
+<span id="L992"><a href="#L992" aria-label="第 992 行"> 992</a> 	callbacks?: RetryCallbacks,</span>
+<span id="L993"><a href="#L993" aria-label="第 993 行"> 993</a> 	sessionId?: string,</span>
+<span id="L994"><a href="#L994" aria-label="第 994 行"> 994</a> ): Promise&lt;{ text: string; usage: Usage }&gt; {</span>
+<span id="L995"><a href="#L995" aria-label="第 995 行"> 995</a> 	const maxTokens = Math.min(</span>
+<span id="L996"><a href="#L996" aria-label="第 996 行"> 996</a> 		Math.floor(0.5 * reserveTokens),</span>
+<span id="L997"><a href="#L997" aria-label="第 997 行"> 997</a> 		model.maxTokens &gt; 0 ? model.maxTokens : Number.POSITIVE_INFINITY,</span>
+<span id="L998"><a href="#L998" aria-label="第 998 行"> 998</a> 	); // Smaller budget for turn prefix</span>
+<span id="L999"><a href="#L999" aria-label="第 999 行"> 999</a> 	const llmMessages = convertToLlm(messages);</span>
+<span id="L1000"><a href="#L1000" aria-label="第 1000 行">1000</a> 	const conversationText = serializeConversation(llmMessages);</span>
+<span id="L1001"><a href="#L1001" aria-label="第 1001 行">1001</a> 	const promptText = `&lt;conversation&gt;\n${conversationText}\n&lt;/conversation&gt;\n\n${TURN_PREFIX_SUMMARIZATION_PROMPT}`;</span>
+<span id="L1002"><a href="#L1002" aria-label="第 1002 行">1002</a> </span>
+<span id="L1003"><a href="#L1003" aria-label="第 1003 行">1003</a> 	const response = await completeSummarization(</span>
+<span id="L1004"><a href="#L1004" aria-label="第 1004 行">1004</a> 		model,</span>
+<span id="L1005"><a href="#L1005" aria-label="第 1005 行">1005</a> 		buildSummarizationContext(promptText),</span>
+<span id="L1006"><a href="#L1006" aria-label="第 1006 行">1006</a> 		createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel, sessionId),</span>
+<span id="L1007"><a href="#L1007" aria-label="第 1007 行">1007</a> 		streamFn,</span>
+<span id="L1008"><a href="#L1008" aria-label="第 1008 行">1008</a> 		retry,</span>
+<span id="L1009"><a href="#L1009" aria-label="第 1009 行">1009</a> 		callbacks,</span>
+<span id="L1010"><a href="#L1010" aria-label="第 1010 行">1010</a> 	);</span>
+<span id="L1011"><a href="#L1011" aria-label="第 1011 行">1011</a> </span>
+<span id="L1012"><a href="#L1012" aria-label="第 1012 行">1012</a> 	const failure = getSummarizationFailure(response, &quot;Turn prefix summarization&quot;);</span>
+<span id="L1013"><a href="#L1013" aria-label="第 1013 行">1013</a> 	if (failure) {</span>
+<span id="L1014"><a href="#L1014" aria-label="第 1014 行">1014</a> 		throw new Error(failure);</span>
+<span id="L1015"><a href="#L1015" aria-label="第 1015 行">1015</a> 	}</span>
+<span id="L1016"><a href="#L1016" aria-label="第 1016 行">1016</a> 	if (response.content.some((block) =&gt; block.type === &quot;toolCall&quot;)) {</span>
+<span id="L1017"><a href="#L1017" aria-label="第 1017 行">1017</a> 		throw new Error(&quot;Turn prefix summarization attempted to call a tool&quot;);</span>
+<span id="L1018"><a href="#L1018" aria-label="第 1018 行">1018</a> 	}</span>
+<span id="L1019"><a href="#L1019" aria-label="第 1019 行">1019</a> </span>
+<span id="L1020"><a href="#L1020" aria-label="第 1020 行">1020</a> 	return {</span>
+<span id="L1021"><a href="#L1021" aria-label="第 1021 行">1021</a> 		text: contentText(response.content),</span>
+<span id="L1022"><a href="#L1022" aria-label="第 1022 行">1022</a> 		usage: response.usage,</span>
+<span id="L1023"><a href="#L1023" aria-label="第 1023 行">1023</a> 	};</span>
+<span id="L1024"><a href="#L1024" aria-label="第 1024 行">1024</a> }</span></code></pre></body></html>

@@ -1,0 +1,13 @@
+sequenceDiagram
+participant U as 用户
+participant A as Agent
+participant M as 模型
+participant T as 工具
+U->>A: 解释 README
+A->>M: 消息与工具声明
+M-->>A: read 调用
+A->>T: 校验后执行
+T-->>A: 文件内容
+A->>M: 追加工具结果的消息
+M-->>A: 最终解释
+A-->>U: 完成

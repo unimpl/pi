@@ -1,0 +1,527 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>packages/agent/README.md · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>packages/agent/README.md</h1><p>本地快照 · 36b60d2e8985 · 2026-09-23</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> # @earendil-works/pi-agent-core</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a> </span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a> Stateful agent with tool execution and event streaming. Built on `@earendil-works/pi-ai`.</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a> </span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a> ## Installation</span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a> </span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a> ```bash</span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a> npm install @earendil-works/pi-agent-core</span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a> ```</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a> </span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a> ### SQLite session backends</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a> </span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a> The SQLite session backend and the `node:sqlite` adapter live in a separate package, `@earendil-works/pi-session-backend-sqlite-node`, so the core package does not pull in runtime builtins or native SQLite dependencies by default. The backend accepts a runtime-specific SQLite factory, allowing other session backends to ship as their own packages in the future.</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a> </span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a> ## Quick Start</span>
+<span id="L16"><a href="#L16" aria-label="第 16 行">  16</a> </span>
+<span id="L17"><a href="#L17" aria-label="第 17 行">  17</a> ```typescript</span>
+<span id="L18"><a href="#L18" aria-label="第 18 行">  18</a> import { Agent } from &quot;@earendil-works/pi-agent-core&quot;;</span>
+<span id="L19"><a href="#L19" aria-label="第 19 行">  19</a> import { createModels } from &quot;@earendil-works/pi-ai&quot;;</span>
+<span id="L20"><a href="#L20" aria-label="第 20 行">  20</a> import { anthropicProvider } from &quot;@earendil-works/pi-ai/providers/anthropic&quot;;</span>
+<span id="L21"><a href="#L21" aria-label="第 21 行">  21</a> </span>
+<span id="L22"><a href="#L22" aria-label="第 22 行">  22</a> const models = createModels();</span>
+<span id="L23"><a href="#L23" aria-label="第 23 行">  23</a> models.setProvider(anthropicProvider());</span>
+<span id="L24"><a href="#L24" aria-label="第 24 行">  24</a> const model = models.getModel(&quot;anthropic&quot;, &quot;claude-sonnet-4-6&quot;);</span>
+<span id="L25"><a href="#L25" aria-label="第 25 行">  25</a> if (!model) throw new Error(&quot;Model not found&quot;);</span>
+<span id="L26"><a href="#L26" aria-label="第 26 行">  26</a> </span>
+<span id="L27"><a href="#L27" aria-label="第 27 行">  27</a> const agent = new Agent({</span>
+<span id="L28"><a href="#L28" aria-label="第 28 行">  28</a>   initialState: {</span>
+<span id="L29"><a href="#L29" aria-label="第 29 行">  29</a>     systemPrompt: &quot;You are a helpful assistant.&quot;,</span>
+<span id="L30"><a href="#L30" aria-label="第 30 行">  30</a>     model,</span>
+<span id="L31"><a href="#L31" aria-label="第 31 行">  31</a>   },</span>
+<span id="L32"><a href="#L32" aria-label="第 32 行">  32</a>   streamFn: models.streamSimple.bind(models),</span>
+<span id="L33"><a href="#L33" aria-label="第 33 行">  33</a> });</span>
+<span id="L34"><a href="#L34" aria-label="第 34 行">  34</a> </span>
+<span id="L35"><a href="#L35" aria-label="第 35 行">  35</a> agent.subscribe((event) =&gt; {</span>
+<span id="L36"><a href="#L36" aria-label="第 36 行">  36</a>   if (event.type === &quot;message_update&quot; &amp;&amp; event.assistantMessageEvent.type === &quot;text_delta&quot;) {</span>
+<span id="L37"><a href="#L37" aria-label="第 37 行">  37</a>     // Stream just the new text chunk</span>
+<span id="L38"><a href="#L38" aria-label="第 38 行">  38</a>     process.stdout.write(event.assistantMessageEvent.delta);</span>
+<span id="L39"><a href="#L39" aria-label="第 39 行">  39</a>   }</span>
+<span id="L40"><a href="#L40" aria-label="第 40 行">  40</a> });</span>
+<span id="L41"><a href="#L41" aria-label="第 41 行">  41</a> </span>
+<span id="L42"><a href="#L42" aria-label="第 42 行">  42</a> await agent.prompt(&quot;Hello!&quot;);</span>
+<span id="L43"><a href="#L43" aria-label="第 43 行">  43</a> ```</span>
+<span id="L44"><a href="#L44" aria-label="第 44 行">  44</a> </span>
+<span id="L45"><a href="#L45" aria-label="第 45 行">  45</a> ## Experimental facet services</span>
+<span id="L46"><a href="#L46" aria-label="第 46 行">  46</a> </span>
+<span id="L47"><a href="#L47" aria-label="第 47 行">  47</a> Transport-neutral facet-service primitives live in `@earendil-works/chord`. The agent core does not export the service runtime.</span>
+<span id="L48"><a href="#L48" aria-label="第 48 行">  48</a> </span>
+<span id="L49"><a href="#L49" aria-label="第 49 行">  49</a> ## Core Concepts</span>
+<span id="L50"><a href="#L50" aria-label="第 50 行">  50</a> </span>
+<span id="L51"><a href="#L51" aria-label="第 51 行">  51</a> ### AgentMessage vs LLM Message</span>
+<span id="L52"><a href="#L52" aria-label="第 52 行">  52</a> </span>
+<span id="L53"><a href="#L53" aria-label="第 53 行">  53</a> The agent works with `AgentMessage`, a flexible type that can include:</span>
+<span id="L54"><a href="#L54" aria-label="第 54 行">  54</a> - Standard LLM messages (`user`, `assistant`, `toolResult`)</span>
+<span id="L55"><a href="#L55" aria-label="第 55 行">  55</a> - Custom app-specific message types via declaration merging</span>
+<span id="L56"><a href="#L56" aria-label="第 56 行">  56</a> </span>
+<span id="L57"><a href="#L57" aria-label="第 57 行">  57</a> LLMs only understand `user`, `assistant`, and `toolResult`. The `convertToLlm` function bridges this gap by filtering and transforming messages before each LLM call.</span>
+<span id="L58"><a href="#L58" aria-label="第 58 行">  58</a> </span>
+<span id="L59"><a href="#L59" aria-label="第 59 行">  59</a> ### Message Flow</span>
+<span id="L60"><a href="#L60" aria-label="第 60 行">  60</a> </span>
+<span id="L61"><a href="#L61" aria-label="第 61 行">  61</a> ```</span>
+<span id="L62"><a href="#L62" aria-label="第 62 行">  62</a> AgentMessage[] → transformContext() → AgentMessage[] → convertToLlm() → Message[] → LLM</span>
+<span id="L63"><a href="#L63" aria-label="第 63 行">  63</a>                     (optional)                           (required)</span>
+<span id="L64"><a href="#L64" aria-label="第 64 行">  64</a> ```</span>
+<span id="L65"><a href="#L65" aria-label="第 65 行">  65</a> </span>
+<span id="L66"><a href="#L66" aria-label="第 66 行">  66</a> 1. **transformContext**: Prune old messages, inject external context</span>
+<span id="L67"><a href="#L67" aria-label="第 67 行">  67</a> 2. **convertToLlm**: Filter out UI-only messages, convert custom types to LLM format</span>
+<span id="L68"><a href="#L68" aria-label="第 68 行">  68</a> </span>
+<span id="L69"><a href="#L69" aria-label="第 69 行">  69</a> ## Event Flow</span>
+<span id="L70"><a href="#L70" aria-label="第 70 行">  70</a> </span>
+<span id="L71"><a href="#L71" aria-label="第 71 行">  71</a> The agent emits events for UI updates. Understanding the event sequence helps build responsive interfaces.</span>
+<span id="L72"><a href="#L72" aria-label="第 72 行">  72</a> </span>
+<span id="L73"><a href="#L73" aria-label="第 73 行">  73</a> ### prompt() Event Sequence</span>
+<span id="L74"><a href="#L74" aria-label="第 74 行">  74</a> </span>
+<span id="L75"><a href="#L75" aria-label="第 75 行">  75</a> When you call `prompt(&quot;Hello&quot;)`:</span>
+<span id="L76"><a href="#L76" aria-label="第 76 行">  76</a> </span>
+<span id="L77"><a href="#L77" aria-label="第 77 行">  77</a> ```</span>
+<span id="L78"><a href="#L78" aria-label="第 78 行">  78</a> prompt(&quot;Hello&quot;)</span>
+<span id="L79"><a href="#L79" aria-label="第 79 行">  79</a> ├─ agent_start</span>
+<span id="L80"><a href="#L80" aria-label="第 80 行">  80</a> ├─ turn_start</span>
+<span id="L81"><a href="#L81" aria-label="第 81 行">  81</a> ├─ message_start   { message: userMessage }      // Your prompt</span>
+<span id="L82"><a href="#L82" aria-label="第 82 行">  82</a> ├─ message_end     { message: userMessage }</span>
+<span id="L83"><a href="#L83" aria-label="第 83 行">  83</a> ├─ message_start   { message: assistantMessage } // LLM starts responding</span>
+<span id="L84"><a href="#L84" aria-label="第 84 行">  84</a> ├─ message_update  { message: partial... }       // Streaming chunks</span>
+<span id="L85"><a href="#L85" aria-label="第 85 行">  85</a> ├─ message_update  { message: partial... }</span>
+<span id="L86"><a href="#L86" aria-label="第 86 行">  86</a> ├─ message_end     { message: assistantMessage } // Complete response</span>
+<span id="L87"><a href="#L87" aria-label="第 87 行">  87</a> ├─ turn_end        { message, toolResults: [] }</span>
+<span id="L88"><a href="#L88" aria-label="第 88 行">  88</a> └─ agent_end       { messages: [...] }</span>
+<span id="L89"><a href="#L89" aria-label="第 89 行">  89</a> ```</span>
+<span id="L90"><a href="#L90" aria-label="第 90 行">  90</a> </span>
+<span id="L91"><a href="#L91" aria-label="第 91 行">  91</a> ### With Tool Calls</span>
+<span id="L92"><a href="#L92" aria-label="第 92 行">  92</a> </span>
+<span id="L93"><a href="#L93" aria-label="第 93 行">  93</a> If the assistant calls tools, the loop continues:</span>
+<span id="L94"><a href="#L94" aria-label="第 94 行">  94</a> </span>
+<span id="L95"><a href="#L95" aria-label="第 95 行">  95</a> ```</span>
+<span id="L96"><a href="#L96" aria-label="第 96 行">  96</a> prompt(&quot;Read config.json&quot;)</span>
+<span id="L97"><a href="#L97" aria-label="第 97 行">  97</a> ├─ agent_start</span>
+<span id="L98"><a href="#L98" aria-label="第 98 行">  98</a> ├─ turn_start</span>
+<span id="L99"><a href="#L99" aria-label="第 99 行">  99</a> ├─ message_start/end  { userMessage }</span>
+<span id="L100"><a href="#L100" aria-label="第 100 行"> 100</a> ├─ message_start      { assistantMessage with toolCall }</span>
+<span id="L101"><a href="#L101" aria-label="第 101 行"> 101</a> ├─ message_update...</span>
+<span id="L102"><a href="#L102" aria-label="第 102 行"> 102</a> ├─ message_end        { assistantMessage }</span>
+<span id="L103"><a href="#L103" aria-label="第 103 行"> 103</a> ├─ tool_execution_start  { toolCallId, toolName, args }</span>
+<span id="L104"><a href="#L104" aria-label="第 104 行"> 104</a> ├─ tool_execution_update { partialResult }           // If tool streams</span>
+<span id="L105"><a href="#L105" aria-label="第 105 行"> 105</a> ├─ tool_execution_end    { toolCallId, result }</span>
+<span id="L106"><a href="#L106" aria-label="第 106 行"> 106</a> ├─ message_start/end  { toolResultMessage }</span>
+<span id="L107"><a href="#L107" aria-label="第 107 行"> 107</a> ├─ turn_end           { message, toolResults: [toolResult] }</span>
+<span id="L108"><a href="#L108" aria-label="第 108 行"> 108</a> │</span>
+<span id="L109"><a href="#L109" aria-label="第 109 行"> 109</a> ├─ turn_start                                        // Next turn</span>
+<span id="L110"><a href="#L110" aria-label="第 110 行"> 110</a> ├─ message_start      { assistantMessage }           // LLM responds to tool result</span>
+<span id="L111"><a href="#L111" aria-label="第 111 行"> 111</a> ├─ message_update...</span>
+<span id="L112"><a href="#L112" aria-label="第 112 行"> 112</a> ├─ message_end</span>
+<span id="L113"><a href="#L113" aria-label="第 113 行"> 113</a> ├─ turn_end</span>
+<span id="L114"><a href="#L114" aria-label="第 114 行"> 114</a> └─ agent_end</span>
+<span id="L115"><a href="#L115" aria-label="第 115 行"> 115</a> ```</span>
+<span id="L116"><a href="#L116" aria-label="第 116 行"> 116</a> </span>
+<span id="L117"><a href="#L117" aria-label="第 117 行"> 117</a> Tool execution mode is configurable:</span>
+<span id="L118"><a href="#L118" aria-label="第 118 行"> 118</a> </span>
+<span id="L119"><a href="#L119" aria-label="第 119 行"> 119</a> - `parallel` (default): preflight tool calls sequentially, execute allowed tools concurrently, emit `tool_execution_end` as soon as each tool is finalized, then emit toolResult messages and `turn_end.toolResults` in assistant source order</span>
+<span id="L120"><a href="#L120" aria-label="第 120 行"> 120</a> - `sequential`: execute tool calls one by one, matching the historical behavior</span>
+<span id="L121"><a href="#L121" aria-label="第 121 行"> 121</a> </span>
+<span id="L122"><a href="#L122" aria-label="第 122 行"> 122</a> In parallel mode, tool completion events follow tool completion order, but persisted toolResult messages still follow assistant source order.</span>
+<span id="L123"><a href="#L123" aria-label="第 123 行"> 123</a> </span>
+<span id="L124"><a href="#L124" aria-label="第 124 行"> 124</a> The mode can be set globally via `toolExecution` in the agent config, or per-tool via `executionMode` on `AgentTool`. If any tool call in a batch targets a tool with `executionMode: &quot;sequential&quot;`, the entire batch executes sequentially regardless of the global setting.</span>
+<span id="L125"><a href="#L125" aria-label="第 125 行"> 125</a> </span>
+<span id="L126"><a href="#L126" aria-label="第 126 行"> 126</a> The `beforeToolCall` hook runs after `tool_execution_start` and validated argument parsing. It can block execution and attach `terminate: true` to the blocked result. The `afterToolCall` hook runs after tool execution finishes and before `tool_execution_end` and final tool result message events are emitted.</span>
+<span id="L127"><a href="#L127" aria-label="第 127 行"> 127</a> </span>
+<span id="L128"><a href="#L128" aria-label="第 128 行"> 128</a> Tools, blocked `beforeToolCall` results, and `afterToolCall` overrides can return `terminate: true` to hint that the automatic follow-up LLM call should be skipped. The loop only stops early when every finalized tool result in that batch sets `terminate: true`. Mixed batches continue normally.</span>
+<span id="L129"><a href="#L129" aria-label="第 129 行"> 129</a> </span>
+<span id="L130"><a href="#L130" aria-label="第 130 行"> 130</a> The `Agent` class accepts `shouldStopAfterTurn` in `AgentOptions`. Low-level loop callers can set the same hook in `AgentLoopConfig`:</span>
+<span id="L131"><a href="#L131" aria-label="第 131 行"> 131</a> </span>
+<span id="L132"><a href="#L132" aria-label="第 132 行"> 132</a> ```typescript</span>
+<span id="L133"><a href="#L133" aria-label="第 133 行"> 133</a> const stream = agentLoop(</span>
+<span id="L134"><a href="#L134" aria-label="第 134 行"> 134</a>   prompts,</span>
+<span id="L135"><a href="#L135" aria-label="第 135 行"> 135</a>   context,</span>
+<span id="L136"><a href="#L136" aria-label="第 136 行"> 136</a>   {</span>
+<span id="L137"><a href="#L137" aria-label="第 137 行"> 137</a>     model,</span>
+<span id="L138"><a href="#L138" aria-label="第 138 行"> 138</a>     convertToLlm,</span>
+<span id="L139"><a href="#L139" aria-label="第 139 行"> 139</a>     shouldStopAfterTurn: async ({ message, toolResults, context, newMessages }) =&gt; {</span>
+<span id="L140"><a href="#L140" aria-label="第 140 行"> 140</a>       return shouldCompactBeforeNextTurn(context.messages);</span>
+<span id="L141"><a href="#L141" aria-label="第 141 行"> 141</a>     },</span>
+<span id="L142"><a href="#L142" aria-label="第 142 行"> 142</a>   },</span>
+<span id="L143"><a href="#L143" aria-label="第 143 行"> 143</a>   undefined,</span>
+<span id="L144"><a href="#L144" aria-label="第 144 行"> 144</a>   models.streamSimple.bind(models),</span>
+<span id="L145"><a href="#L145" aria-label="第 145 行"> 145</a> );</span>
+<span id="L146"><a href="#L146" aria-label="第 146 行"> 146</a> ```</span>
+<span id="L147"><a href="#L147" aria-label="第 147 行"> 147</a> </span>
+<span id="L148"><a href="#L148" aria-label="第 148 行"> 148</a> `shouldStopAfterTurn` runs after `turn_end` is emitted and after the assistant response and any tool executions have completed normally. If it returns `true`, the loop emits `agent_end` and exits before polling steering or follow-up queues, and before starting another LLM call. It does not abort the provider stream, does not cancel running tools, and does not alter the assistant message stop reason. The `AgentOptions` callback also receives the active run&#x27;s `AbortSignal` as its second argument.</span>
+<span id="L149"><a href="#L149" aria-label="第 149 行"> 149</a> </span>
+<span id="L150"><a href="#L150" aria-label="第 150 行"> 150</a> When you use the `Agent` class, assistant `message_end` processing is treated as a barrier before tool preflight begins. That means `beforeToolCall` sees agent state that already includes the assistant message that requested the tool call.</span>
+<span id="L151"><a href="#L151" aria-label="第 151 行"> 151</a> </span>
+<span id="L152"><a href="#L152" aria-label="第 152 行"> 152</a> ### continue() Event Sequence</span>
+<span id="L153"><a href="#L153" aria-label="第 153 行"> 153</a> </span>
+<span id="L154"><a href="#L154" aria-label="第 154 行"> 154</a> `continue()` resumes from existing context without adding a new message. Use it for retries after errors.</span>
+<span id="L155"><a href="#L155" aria-label="第 155 行"> 155</a> </span>
+<span id="L156"><a href="#L156" aria-label="第 156 行"> 156</a> ```typescript</span>
+<span id="L157"><a href="#L157" aria-label="第 157 行"> 157</a> // After an error, retry from current state</span>
+<span id="L158"><a href="#L158" aria-label="第 158 行"> 158</a> await agent.continue();</span>
+<span id="L159"><a href="#L159" aria-label="第 159 行"> 159</a> ```</span>
+<span id="L160"><a href="#L160" aria-label="第 160 行"> 160</a> </span>
+<span id="L161"><a href="#L161" aria-label="第 161 行"> 161</a> The last message in context must be `user` or `toolResult` (not `assistant`).</span>
+<span id="L162"><a href="#L162" aria-label="第 162 行"> 162</a> </span>
+<span id="L163"><a href="#L163" aria-label="第 163 行"> 163</a> ### Event Types</span>
+<span id="L164"><a href="#L164" aria-label="第 164 行"> 164</a> </span>
+<span id="L165"><a href="#L165" aria-label="第 165 行"> 165</a> | Event | Description |</span>
+<span id="L166"><a href="#L166" aria-label="第 166 行"> 166</a> |-------|-------------|</span>
+<span id="L167"><a href="#L167" aria-label="第 167 行"> 167</a> | `agent_start` | Agent begins processing |</span>
+<span id="L168"><a href="#L168" aria-label="第 168 行"> 168</a> | `agent_end` | Final event for the run. Awaited subscribers for this event still count toward settlement |</span>
+<span id="L169"><a href="#L169" aria-label="第 169 行"> 169</a> | `turn_start` | New turn begins (one LLM call + tool executions) |</span>
+<span id="L170"><a href="#L170" aria-label="第 170 行"> 170</a> | `turn_end` | Turn completes with assistant message and tool results |</span>
+<span id="L171"><a href="#L171" aria-label="第 171 行"> 171</a> | `message_start` | Any message begins (user, assistant, toolResult) |</span>
+<span id="L172"><a href="#L172" aria-label="第 172 行"> 172</a> | `message_update` | **Assistant only.** Includes `assistantMessageEvent` with delta |</span>
+<span id="L173"><a href="#L173" aria-label="第 173 行"> 173</a> | `message_end` | Message completes |</span>
+<span id="L174"><a href="#L174" aria-label="第 174 行"> 174</a> | `tool_execution_start` | Tool begins |</span>
+<span id="L175"><a href="#L175" aria-label="第 175 行"> 175</a> | `tool_execution_update` | Tool streams progress |</span>
+<span id="L176"><a href="#L176" aria-label="第 176 行"> 176</a> | `tool_execution_end` | Tool completes |</span>
+<span id="L177"><a href="#L177" aria-label="第 177 行"> 177</a> </span>
+<span id="L178"><a href="#L178" aria-label="第 178 行"> 178</a> `Agent.subscribe()` listeners are awaited in registration order. `agent_end` means no more loop events will be emitted, but `await agent.waitForIdle()` and `await agent.prompt(...)` only settle after awaited `agent_end` listeners finish.</span>
+<span id="L179"><a href="#L179" aria-label="第 179 行"> 179</a> </span>
+<span id="L180"><a href="#L180" aria-label="第 180 行"> 180</a> ## Agent Options</span>
+<span id="L181"><a href="#L181" aria-label="第 181 行"> 181</a> </span>
+<span id="L182"><a href="#L182" aria-label="第 182 行"> 182</a> ```typescript</span>
+<span id="L183"><a href="#L183" aria-label="第 183 行"> 183</a> const agent = new Agent({</span>
+<span id="L184"><a href="#L184" aria-label="第 184 行"> 184</a>   // Initial state. systemPrompt and tools become the leading system message</span>
+<span id="L185"><a href="#L185" aria-label="第 185 行"> 185</a>   // unless messages already starts with one.</span>
+<span id="L186"><a href="#L186" aria-label="第 186 行"> 186</a>   initialState: {</span>
+<span id="L187"><a href="#L187" aria-label="第 187 行"> 187</a>     systemPrompt: string,</span>
+<span id="L188"><a href="#L188" aria-label="第 188 行"> 188</a>     model: Model&lt;any&gt;,</span>
+<span id="L189"><a href="#L189" aria-label="第 189 行"> 189</a>     thinkingLevel: &quot;off&quot; | &quot;minimal&quot; | &quot;low&quot; | &quot;medium&quot; | &quot;high&quot; | &quot;xhigh&quot; | &quot;max&quot;,</span>
+<span id="L190"><a href="#L190" aria-label="第 190 行"> 190</a>     tools: AgentTool&lt;any&gt;[],</span>
+<span id="L191"><a href="#L191" aria-label="第 191 行"> 191</a>     messages: AgentMessage[],</span>
+<span id="L192"><a href="#L192" aria-label="第 192 行"> 192</a>   },</span>
+<span id="L193"><a href="#L193" aria-label="第 193 行"> 193</a> </span>
+<span id="L194"><a href="#L194" aria-label="第 194 行"> 194</a>   // Convert AgentMessage[] to LLM Message[] (required for custom message types)</span>
+<span id="L195"><a href="#L195" aria-label="第 195 行"> 195</a>   convertToLlm: (messages) =&gt; messages.filter(...),</span>
+<span id="L196"><a href="#L196" aria-label="第 196 行"> 196</a> </span>
+<span id="L197"><a href="#L197" aria-label="第 197 行"> 197</a>   // Transform context before convertToLlm (for pruning, compaction)</span>
+<span id="L198"><a href="#L198" aria-label="第 198 行"> 198</a>   transformContext: async (messages, signal) =&gt; pruneOldMessages(messages),</span>
+<span id="L199"><a href="#L199" aria-label="第 199 行"> 199</a> </span>
+<span id="L200"><a href="#L200" aria-label="第 200 行"> 200</a>   // Steering mode: &quot;one-at-a-time&quot; (default) or &quot;all&quot;</span>
+<span id="L201"><a href="#L201" aria-label="第 201 行"> 201</a>   steeringMode: &quot;one-at-a-time&quot;,</span>
+<span id="L202"><a href="#L202" aria-label="第 202 行"> 202</a> </span>
+<span id="L203"><a href="#L203" aria-label="第 203 行"> 203</a>   // Follow-up mode: &quot;one-at-a-time&quot; (default) or &quot;all&quot;</span>
+<span id="L204"><a href="#L204" aria-label="第 204 行"> 204</a>   followUpMode: &quot;one-at-a-time&quot;,</span>
+<span id="L205"><a href="#L205" aria-label="第 205 行"> 205</a> </span>
+<span id="L206"><a href="#L206" aria-label="第 206 行"> 206</a>   // Required stream function. Receives a TranscriptContext: the prompt and tools</span>
+<span id="L207"><a href="#L207" aria-label="第 207 行"> 207</a>   // are in the transcript&#x27;s system messages, not on the context.</span>
+<span id="L208"><a href="#L208" aria-label="第 208 行"> 208</a>   streamFn: models.streamSimple.bind(models),</span>
+<span id="L209"><a href="#L209" aria-label="第 209 行"> 209</a> </span>
+<span id="L210"><a href="#L210" aria-label="第 210 行"> 210</a>   // Session ID for provider caching</span>
+<span id="L211"><a href="#L211" aria-label="第 211 行"> 211</a>   sessionId: &quot;session-123&quot;,</span>
+<span id="L212"><a href="#L212" aria-label="第 212 行"> 212</a> </span>
+<span id="L213"><a href="#L213" aria-label="第 213 行"> 213</a>   // Dynamic API key resolution (for expiring OAuth tokens)</span>
+<span id="L214"><a href="#L214" aria-label="第 214 行"> 214</a>   getApiKey: async (provider) =&gt; refreshToken(),</span>
+<span id="L215"><a href="#L215" aria-label="第 215 行"> 215</a> </span>
+<span id="L216"><a href="#L216" aria-label="第 216 行"> 216</a>   // Tool execution mode: &quot;parallel&quot; (default) or &quot;sequential&quot;</span>
+<span id="L217"><a href="#L217" aria-label="第 217 行"> 217</a>   toolExecution: &quot;parallel&quot;,</span>
+<span id="L218"><a href="#L218" aria-label="第 218 行"> 218</a> </span>
+<span id="L219"><a href="#L219" aria-label="第 219 行"> 219</a>   // Preflight each tool call after args are validated. Can block execution.</span>
+<span id="L220"><a href="#L220" aria-label="第 220 行"> 220</a>   beforeToolCall: async ({ toolCall, args, context }) =&gt; {</span>
+<span id="L221"><a href="#L221" aria-label="第 221 行"> 221</a>     if (toolCall.name === &quot;bash&quot;) {</span>
+<span id="L222"><a href="#L222" aria-label="第 222 行"> 222</a>       return { block: true, reason: &quot;bash is disabled&quot;, terminate: true };</span>
+<span id="L223"><a href="#L223" aria-label="第 223 行"> 223</a>     }</span>
+<span id="L224"><a href="#L224" aria-label="第 224 行"> 224</a>   },</span>
+<span id="L225"><a href="#L225" aria-label="第 225 行"> 225</a> </span>
+<span id="L226"><a href="#L226" aria-label="第 226 行"> 226</a>   // Postprocess each tool result before final tool events are emitted.</span>
+<span id="L227"><a href="#L227" aria-label="第 227 行"> 227</a>   afterToolCall: async ({ toolCall, result, isError, context }) =&gt; {</span>
+<span id="L228"><a href="#L228" aria-label="第 228 行"> 228</a>     if (toolCall.name === &quot;notify_done&quot; &amp;&amp; !isError) {</span>
+<span id="L229"><a href="#L229" aria-label="第 229 行"> 229</a>       return { terminate: true };</span>
+<span id="L230"><a href="#L230" aria-label="第 230 行"> 230</a>     }</span>
+<span id="L231"><a href="#L231" aria-label="第 231 行"> 231</a>     if (!isError) {</span>
+<span id="L232"><a href="#L232" aria-label="第 232 行"> 232</a>       return { details: { ...result.details, audited: true } };</span>
+<span id="L233"><a href="#L233" aria-label="第 233 行"> 233</a>     }</span>
+<span id="L234"><a href="#L234" aria-label="第 234 行"> 234</a>   },</span>
+<span id="L235"><a href="#L235" aria-label="第 235 行"> 235</a> </span>
+<span id="L236"><a href="#L236" aria-label="第 236 行"> 236</a>   // Stop gracefully after a completed turn, before queued messages are polled.</span>
+<span id="L237"><a href="#L237" aria-label="第 237 行"> 237</a>   shouldStopAfterTurn: async ({ context }, signal) =&gt; {</span>
+<span id="L238"><a href="#L238" aria-label="第 238 行"> 238</a>     return shouldCompactBeforeNextTurn(context.messages, signal);</span>
+<span id="L239"><a href="#L239" aria-label="第 239 行"> 239</a>   },</span>
+<span id="L240"><a href="#L240" aria-label="第 240 行"> 240</a> </span>
+<span id="L241"><a href="#L241" aria-label="第 241 行"> 241</a>   // Custom thinking budgets for token-based providers</span>
+<span id="L242"><a href="#L242" aria-label="第 242 行"> 242</a>   thinkingBudgets: {</span>
+<span id="L243"><a href="#L243" aria-label="第 243 行"> 243</a>     minimal: 128,</span>
+<span id="L244"><a href="#L244" aria-label="第 244 行"> 244</a>     low: 512,</span>
+<span id="L245"><a href="#L245" aria-label="第 245 行"> 245</a>     medium: 1024,</span>
+<span id="L246"><a href="#L246" aria-label="第 246 行"> 246</a>     high: 2048,</span>
+<span id="L247"><a href="#L247" aria-label="第 247 行"> 247</a>   },</span>
+<span id="L248"><a href="#L248" aria-label="第 248 行"> 248</a> });</span>
+<span id="L249"><a href="#L249" aria-label="第 249 行"> 249</a> ```</span>
+<span id="L250"><a href="#L250" aria-label="第 250 行"> 250</a> </span>
+<span id="L251"><a href="#L251" aria-label="第 251 行"> 251</a> ## Agent State</span>
+<span id="L252"><a href="#L252" aria-label="第 252 行"> 252</a> </span>
+<span id="L253"><a href="#L253" aria-label="第 253 行"> 253</a> ```typescript</span>
+<span id="L254"><a href="#L254" aria-label="第 254 行"> 254</a> interface AgentState {</span>
+<span id="L255"><a href="#L255" aria-label="第 255 行"> 255</a>   model: Model&lt;any&gt;;</span>
+<span id="L256"><a href="#L256" aria-label="第 256 行"> 256</a>   thinkingLevel: ThinkingLevel;</span>
+<span id="L257"><a href="#L257" aria-label="第 257 行"> 257</a>   tools: AgentTool&lt;any&gt;[];</span>
+<span id="L258"><a href="#L258" aria-label="第 258 行"> 258</a>   messages: AgentMessage[];</span>
+<span id="L259"><a href="#L259" aria-label="第 259 行"> 259</a>   readonly isStreaming: boolean;</span>
+<span id="L260"><a href="#L260" aria-label="第 260 行"> 260</a>   readonly streamingMessage?: AgentMessage;</span>
+<span id="L261"><a href="#L261" aria-label="第 261 行"> 261</a>   readonly pendingToolCalls: ReadonlySet&lt;string&gt;;</span>
+<span id="L262"><a href="#L262" aria-label="第 262 行"> 262</a>   readonly errorMessage?: string;</span>
+<span id="L263"><a href="#L263" aria-label="第 263 行"> 263</a> }</span>
+<span id="L264"><a href="#L264" aria-label="第 264 行"> 264</a> ```</span>
+<span id="L265"><a href="#L265" aria-label="第 265 行"> 265</a> </span>
+<span id="L266"><a href="#L266" aria-label="第 266 行"> 266</a> Access state via `agent.state`.</span>
+<span id="L267"><a href="#L267" aria-label="第 267 行"> 267</a> </span>
+<span id="L268"><a href="#L268" aria-label="第 268 行"> 268</a> Assigning `agent.state.tools = [...]` or `agent.state.messages = [...]` copies the top-level array before storing it. Mutating the returned array mutates the current agent state.</span>
+<span id="L269"><a href="#L269" aria-label="第 269 行"> 269</a> </span>
+<span id="L270"><a href="#L270" aria-label="第 270 行"> 270</a> The transcript owns the system prompt and tool declarations: the leading system message is the prompt, later system messages patch it (see `SystemMessage` in pi-ai). `agent.state.systemPrompt` is read-only and replays the transcript. `agent.state.tools` is the executable loadout; before every request the loop diffs it against the tools the transcript declares and, if they differ, announces the change in a system message (merged into a pending system message when one exists). pi-ai&#x27;s `getCurrentSystemMessage(messages)` returns the replayed head, including declared tools, for any message array, including agent transcripts with custom message roles.</span>
+<span id="L271"><a href="#L271" aria-label="第 271 行"> 271</a> </span>
+<span id="L272"><a href="#L272" aria-label="第 272 行"> 272</a> To change the prompt mid-conversation, append a system message with `content` (added instructions) or `sections` (named replacements):</span>
+<span id="L273"><a href="#L273" aria-label="第 273 行"> 273</a> </span>
+<span id="L274"><a href="#L274" aria-label="第 274 行"> 274</a> ```typescript</span>
+<span id="L275"><a href="#L275" aria-label="第 275 行"> 275</a> await agent.prompt([</span>
+<span id="L276"><a href="#L276" aria-label="第 276 行"> 276</a>   { role: &quot;system&quot;, content: &quot;&quot;, sections: { skills: &quot;&lt;skills&gt;...&lt;/skills&gt;&quot; }, timestamp: Date.now() },</span>
+<span id="L277"><a href="#L277" aria-label="第 277 行"> 277</a>   { role: &quot;user&quot;, content: &quot;Continue&quot;, timestamp: Date.now() },</span>
+<span id="L278"><a href="#L278" aria-label="第 278 行"> 278</a> ]);</span>
+<span id="L279"><a href="#L279" aria-label="第 279 行"> 279</a> ```</span>
+<span id="L280"><a href="#L280" aria-label="第 280 行"> 280</a> </span>
+<span id="L281"><a href="#L281" aria-label="第 281 行"> 281</a> During streaming, `agent.state.streamingMessage` contains the current partial assistant message.</span>
+<span id="L282"><a href="#L282" aria-label="第 282 行"> 282</a> </span>
+<span id="L283"><a href="#L283" aria-label="第 283 行"> 283</a> `agent.state.isStreaming` remains `true` until the run fully settles, including awaited `agent_end` subscribers.</span>
+<span id="L284"><a href="#L284" aria-label="第 284 行"> 284</a> </span>
+<span id="L285"><a href="#L285" aria-label="第 285 行"> 285</a> ## Methods</span>
+<span id="L286"><a href="#L286" aria-label="第 286 行"> 286</a> </span>
+<span id="L287"><a href="#L287" aria-label="第 287 行"> 287</a> ### Prompting</span>
+<span id="L288"><a href="#L288" aria-label="第 288 行"> 288</a> </span>
+<span id="L289"><a href="#L289" aria-label="第 289 行"> 289</a> ```typescript</span>
+<span id="L290"><a href="#L290" aria-label="第 290 行"> 290</a> // Text prompt</span>
+<span id="L291"><a href="#L291" aria-label="第 291 行"> 291</a> await agent.prompt(&quot;Hello&quot;);</span>
+<span id="L292"><a href="#L292" aria-label="第 292 行"> 292</a> </span>
+<span id="L293"><a href="#L293" aria-label="第 293 行"> 293</a> // With images</span>
+<span id="L294"><a href="#L294" aria-label="第 294 行"> 294</a> await agent.prompt(&quot;What&#x27;s in this image?&quot;, [</span>
+<span id="L295"><a href="#L295" aria-label="第 295 行"> 295</a>   { type: &quot;image&quot;, data: base64Data, mimeType: &quot;image/jpeg&quot; }</span>
+<span id="L296"><a href="#L296" aria-label="第 296 行"> 296</a> ]);</span>
+<span id="L297"><a href="#L297" aria-label="第 297 行"> 297</a> </span>
+<span id="L298"><a href="#L298" aria-label="第 298 行"> 298</a> // AgentMessage directly</span>
+<span id="L299"><a href="#L299" aria-label="第 299 行"> 299</a> await agent.prompt({ role: &quot;user&quot;, content: &quot;Hello&quot;, timestamp: Date.now() });</span>
+<span id="L300"><a href="#L300" aria-label="第 300 行"> 300</a> </span>
+<span id="L301"><a href="#L301" aria-label="第 301 行"> 301</a> // Continue from current context (last message must be user or toolResult)</span>
+<span id="L302"><a href="#L302" aria-label="第 302 行"> 302</a> await agent.continue();</span>
+<span id="L303"><a href="#L303" aria-label="第 303 行"> 303</a> ```</span>
+<span id="L304"><a href="#L304" aria-label="第 304 行"> 304</a> </span>
+<span id="L305"><a href="#L305" aria-label="第 305 行"> 305</a> ### State Management</span>
+<span id="L306"><a href="#L306" aria-label="第 306 行"> 306</a> </span>
+<span id="L307"><a href="#L307" aria-label="第 307 行"> 307</a> ```typescript</span>
+<span id="L308"><a href="#L308" aria-label="第 308 行"> 308</a> agent.state.model = getModel(&quot;openai&quot;, &quot;gpt-4o&quot;);</span>
+<span id="L309"><a href="#L309" aria-label="第 309 行"> 309</a> agent.state.thinkingLevel = &quot;medium&quot;;</span>
+<span id="L310"><a href="#L310" aria-label="第 310 行"> 310</a> agent.state.tools = [myTool];</span>
+<span id="L311"><a href="#L311" aria-label="第 311 行"> 311</a> agent.toolExecution = &quot;sequential&quot;;</span>
+<span id="L312"><a href="#L312" aria-label="第 312 行"> 312</a> agent.beforeToolCall = async ({ toolCall }) =&gt; undefined;</span>
+<span id="L313"><a href="#L313" aria-label="第 313 行"> 313</a> agent.afterToolCall = async ({ toolCall, result }) =&gt; undefined;</span>
+<span id="L314"><a href="#L314" aria-label="第 314 行"> 314</a> agent.shouldStopAfterTurn = async ({ context }) =&gt; shouldCompactBeforeNextTurn(context.messages);</span>
+<span id="L315"><a href="#L315" aria-label="第 315 行"> 315</a> agent.state.messages = newMessages; // top-level array is copied</span>
+<span id="L316"><a href="#L316" aria-label="第 316 行"> 316</a> agent.state.messages.push(message);</span>
+<span id="L317"><a href="#L317" aria-label="第 317 行"> 317</a> agent.reset();</span>
+<span id="L318"><a href="#L318" aria-label="第 318 行"> 318</a> ```</span>
+<span id="L319"><a href="#L319" aria-label="第 319 行"> 319</a> </span>
+<span id="L320"><a href="#L320" aria-label="第 320 行"> 320</a> ### Session and Thinking Budgets</span>
+<span id="L321"><a href="#L321" aria-label="第 321 行"> 321</a> </span>
+<span id="L322"><a href="#L322" aria-label="第 322 行"> 322</a> ```typescript</span>
+<span id="L323"><a href="#L323" aria-label="第 323 行"> 323</a> agent.sessionId = &quot;session-123&quot;;</span>
+<span id="L324"><a href="#L324" aria-label="第 324 行"> 324</a> </span>
+<span id="L325"><a href="#L325" aria-label="第 325 行"> 325</a> agent.thinkingBudgets = {</span>
+<span id="L326"><a href="#L326" aria-label="第 326 行"> 326</a>   minimal: 128,</span>
+<span id="L327"><a href="#L327" aria-label="第 327 行"> 327</a>   low: 512,</span>
+<span id="L328"><a href="#L328" aria-label="第 328 行"> 328</a>   medium: 1024,</span>
+<span id="L329"><a href="#L329" aria-label="第 329 行"> 329</a>   high: 2048,</span>
+<span id="L330"><a href="#L330" aria-label="第 330 行"> 330</a> };</span>
+<span id="L331"><a href="#L331" aria-label="第 331 行"> 331</a> ```</span>
+<span id="L332"><a href="#L332" aria-label="第 332 行"> 332</a> </span>
+<span id="L333"><a href="#L333" aria-label="第 333 行"> 333</a> ### Control</span>
+<span id="L334"><a href="#L334" aria-label="第 334 行"> 334</a> </span>
+<span id="L335"><a href="#L335" aria-label="第 335 行"> 335</a> ```typescript</span>
+<span id="L336"><a href="#L336" aria-label="第 336 行"> 336</a> agent.abort();           // Cancel current operation</span>
+<span id="L337"><a href="#L337" aria-label="第 337 行"> 337</a> await agent.waitForIdle(); // Wait for completion</span>
+<span id="L338"><a href="#L338" aria-label="第 338 行"> 338</a> ```</span>
+<span id="L339"><a href="#L339" aria-label="第 339 行"> 339</a> </span>
+<span id="L340"><a href="#L340" aria-label="第 340 行"> 340</a> ### Events</span>
+<span id="L341"><a href="#L341" aria-label="第 341 行"> 341</a> </span>
+<span id="L342"><a href="#L342" aria-label="第 342 行"> 342</a> ```typescript</span>
+<span id="L343"><a href="#L343" aria-label="第 343 行"> 343</a> const unsubscribe = agent.subscribe(async (event, signal) =&gt; {</span>
+<span id="L344"><a href="#L344" aria-label="第 344 行"> 344</a>   if (event.type === &quot;agent_end&quot;) {</span>
+<span id="L345"><a href="#L345" aria-label="第 345 行"> 345</a>     // Final barrier work for the run</span>
+<span id="L346"><a href="#L346" aria-label="第 346 行"> 346</a>     await flushSessionState(signal);</span>
+<span id="L347"><a href="#L347" aria-label="第 347 行"> 347</a>   }</span>
+<span id="L348"><a href="#L348" aria-label="第 348 行"> 348</a> });</span>
+<span id="L349"><a href="#L349" aria-label="第 349 行"> 349</a> unsubscribe();</span>
+<span id="L350"><a href="#L350" aria-label="第 350 行"> 350</a> ```</span>
+<span id="L351"><a href="#L351" aria-label="第 351 行"> 351</a> </span>
+<span id="L352"><a href="#L352" aria-label="第 352 行"> 352</a> ## Steering and Follow-up</span>
+<span id="L353"><a href="#L353" aria-label="第 353 行"> 353</a> </span>
+<span id="L354"><a href="#L354" aria-label="第 354 行"> 354</a> Steering messages let you interrupt the agent while tools are running. Follow-up messages let you queue work after the agent would otherwise stop.</span>
+<span id="L355"><a href="#L355" aria-label="第 355 行"> 355</a> </span>
+<span id="L356"><a href="#L356" aria-label="第 356 行"> 356</a> ```typescript</span>
+<span id="L357"><a href="#L357" aria-label="第 357 行"> 357</a> agent.steeringMode = &quot;one-at-a-time&quot;;</span>
+<span id="L358"><a href="#L358" aria-label="第 358 行"> 358</a> agent.followUpMode = &quot;one-at-a-time&quot;;</span>
+<span id="L359"><a href="#L359" aria-label="第 359 行"> 359</a> </span>
+<span id="L360"><a href="#L360" aria-label="第 360 行"> 360</a> // While agent is running tools</span>
+<span id="L361"><a href="#L361" aria-label="第 361 行"> 361</a> agent.steer({</span>
+<span id="L362"><a href="#L362" aria-label="第 362 行"> 362</a>   role: &quot;user&quot;,</span>
+<span id="L363"><a href="#L363" aria-label="第 363 行"> 363</a>   content: &quot;Stop! Do this instead.&quot;,</span>
+<span id="L364"><a href="#L364" aria-label="第 364 行"> 364</a>   timestamp: Date.now(),</span>
+<span id="L365"><a href="#L365" aria-label="第 365 行"> 365</a> });</span>
+<span id="L366"><a href="#L366" aria-label="第 366 行"> 366</a> </span>
+<span id="L367"><a href="#L367" aria-label="第 367 行"> 367</a> // After the agent finishes its current work</span>
+<span id="L368"><a href="#L368" aria-label="第 368 行"> 368</a> agent.followUp({</span>
+<span id="L369"><a href="#L369" aria-label="第 369 行"> 369</a>   role: &quot;user&quot;,</span>
+<span id="L370"><a href="#L370" aria-label="第 370 行"> 370</a>   content: &quot;Also summarize the result.&quot;,</span>
+<span id="L371"><a href="#L371" aria-label="第 371 行"> 371</a>   timestamp: Date.now(),</span>
+<span id="L372"><a href="#L372" aria-label="第 372 行"> 372</a> });</span>
+<span id="L373"><a href="#L373" aria-label="第 373 行"> 373</a> </span>
+<span id="L374"><a href="#L374" aria-label="第 374 行"> 374</a> const steeringMode = agent.steeringMode;</span>
+<span id="L375"><a href="#L375" aria-label="第 375 行"> 375</a> const followUpMode = agent.followUpMode;</span>
+<span id="L376"><a href="#L376" aria-label="第 376 行"> 376</a> </span>
+<span id="L377"><a href="#L377" aria-label="第 377 行"> 377</a> agent.clearSteeringQueue();</span>
+<span id="L378"><a href="#L378" aria-label="第 378 行"> 378</a> agent.clearFollowUpQueue();</span>
+<span id="L379"><a href="#L379" aria-label="第 379 行"> 379</a> agent.clearAllQueues();</span>
+<span id="L380"><a href="#L380" aria-label="第 380 行"> 380</a> ```</span>
+<span id="L381"><a href="#L381" aria-label="第 381 行"> 381</a> </span>
+<span id="L382"><a href="#L382" aria-label="第 382 行"> 382</a> Use clearSteeringQueue, clearFollowUpQueue, or clearAllQueues to drop queued messages.</span>
+<span id="L383"><a href="#L383" aria-label="第 383 行"> 383</a> </span>
+<span id="L384"><a href="#L384" aria-label="第 384 行"> 384</a> When steering messages are detected after a turn completes:</span>
+<span id="L385"><a href="#L385" aria-label="第 385 行"> 385</a> 1. All tool calls from the current assistant message have already finished</span>
+<span id="L386"><a href="#L386" aria-label="第 386 行"> 386</a> 2. Steering messages are injected</span>
+<span id="L387"><a href="#L387" aria-label="第 387 行"> 387</a> 3. The LLM responds on the next turn</span>
+<span id="L388"><a href="#L388" aria-label="第 388 行"> 388</a> </span>
+<span id="L389"><a href="#L389" aria-label="第 389 行"> 389</a> Follow-up messages are checked only when there are no more tool calls and no steering messages. If any are queued, they are injected and another turn runs.</span>
+<span id="L390"><a href="#L390" aria-label="第 390 行"> 390</a> </span>
+<span id="L391"><a href="#L391" aria-label="第 391 行"> 391</a> ## Custom Message Types</span>
+<span id="L392"><a href="#L392" aria-label="第 392 行"> 392</a> </span>
+<span id="L393"><a href="#L393" aria-label="第 393 行"> 393</a> Extend `AgentMessage` via declaration merging:</span>
+<span id="L394"><a href="#L394" aria-label="第 394 行"> 394</a> </span>
+<span id="L395"><a href="#L395" aria-label="第 395 行"> 395</a> ```typescript</span>
+<span id="L396"><a href="#L396" aria-label="第 396 行"> 396</a> declare module &quot;@earendil-works/pi-agent-core&quot; {</span>
+<span id="L397"><a href="#L397" aria-label="第 397 行"> 397</a>   interface CustomAgentMessages {</span>
+<span id="L398"><a href="#L398" aria-label="第 398 行"> 398</a>     notification: { role: &quot;notification&quot;; text: string; timestamp: number };</span>
+<span id="L399"><a href="#L399" aria-label="第 399 行"> 399</a>   }</span>
+<span id="L400"><a href="#L400" aria-label="第 400 行"> 400</a> }</span>
+<span id="L401"><a href="#L401" aria-label="第 401 行"> 401</a> </span>
+<span id="L402"><a href="#L402" aria-label="第 402 行"> 402</a> // Now valid</span>
+<span id="L403"><a href="#L403" aria-label="第 403 行"> 403</a> const msg: AgentMessage = { role: &quot;notification&quot;, text: &quot;Info&quot;, timestamp: Date.now() };</span>
+<span id="L404"><a href="#L404" aria-label="第 404 行"> 404</a> ```</span>
+<span id="L405"><a href="#L405" aria-label="第 405 行"> 405</a> </span>
+<span id="L406"><a href="#L406" aria-label="第 406 行"> 406</a> Handle custom types in `convertToLlm`:</span>
+<span id="L407"><a href="#L407" aria-label="第 407 行"> 407</a> </span>
+<span id="L408"><a href="#L408" aria-label="第 408 行"> 408</a> ```typescript</span>
+<span id="L409"><a href="#L409" aria-label="第 409 行"> 409</a> const agent = new Agent({</span>
+<span id="L410"><a href="#L410" aria-label="第 410 行"> 410</a>   streamFn: models.streamSimple.bind(models),</span>
+<span id="L411"><a href="#L411" aria-label="第 411 行"> 411</a>   convertToLlm: (messages) =&gt; messages.flatMap(m =&gt; {</span>
+<span id="L412"><a href="#L412" aria-label="第 412 行"> 412</a>     if (m.role === &quot;notification&quot;) return []; // Filter out</span>
+<span id="L413"><a href="#L413" aria-label="第 413 行"> 413</a>     return [m];</span>
+<span id="L414"><a href="#L414" aria-label="第 414 行"> 414</a>   }),</span>
+<span id="L415"><a href="#L415" aria-label="第 415 行"> 415</a> });</span>
+<span id="L416"><a href="#L416" aria-label="第 416 行"> 416</a> ```</span>
+<span id="L417"><a href="#L417" aria-label="第 417 行"> 417</a> </span>
+<span id="L418"><a href="#L418" aria-label="第 418 行"> 418</a> ## Tools</span>
+<span id="L419"><a href="#L419" aria-label="第 419 行"> 419</a> </span>
+<span id="L420"><a href="#L420" aria-label="第 420 行"> 420</a> Define tools using `AgentTool`:</span>
+<span id="L421"><a href="#L421" aria-label="第 421 行"> 421</a> </span>
+<span id="L422"><a href="#L422" aria-label="第 422 行"> 422</a> ```typescript</span>
+<span id="L423"><a href="#L423" aria-label="第 423 行"> 423</a> import { Type } from &quot;typebox&quot;;</span>
+<span id="L424"><a href="#L424" aria-label="第 424 行"> 424</a> </span>
+<span id="L425"><a href="#L425" aria-label="第 425 行"> 425</a> const readFileTool: AgentTool = {</span>
+<span id="L426"><a href="#L426" aria-label="第 426 行"> 426</a>   name: &quot;read_file&quot;,</span>
+<span id="L427"><a href="#L427" aria-label="第 427 行"> 427</a>   label: &quot;Read File&quot;,  // For UI display</span>
+<span id="L428"><a href="#L428" aria-label="第 428 行"> 428</a>   description: &quot;Read a file&#x27;s contents&quot;,</span>
+<span id="L429"><a href="#L429" aria-label="第 429 行"> 429</a>   parameters: Type.Object({</span>
+<span id="L430"><a href="#L430" aria-label="第 430 行"> 430</a>     path: Type.String({ description: &quot;File path&quot; }),</span>
+<span id="L431"><a href="#L431" aria-label="第 431 行"> 431</a>   }),</span>
+<span id="L432"><a href="#L432" aria-label="第 432 行"> 432</a>   // Override execution mode for this tool (optional).</span>
+<span id="L433"><a href="#L433" aria-label="第 433 行"> 433</a>   // &quot;sequential&quot; forces the entire batch to run one at a time.</span>
+<span id="L434"><a href="#L434" aria-label="第 434 行"> 434</a>   // &quot;parallel&quot; allows concurrent execution with other tool calls.</span>
+<span id="L435"><a href="#L435" aria-label="第 435 行"> 435</a>   // If omitted, the global toolExecution config applies.</span>
+<span id="L436"><a href="#L436" aria-label="第 436 行"> 436</a>   executionMode: &quot;sequential&quot;,</span>
+<span id="L437"><a href="#L437" aria-label="第 437 行"> 437</a>   execute: async (toolCallId, params, signal, onUpdate) =&gt; {</span>
+<span id="L438"><a href="#L438" aria-label="第 438 行"> 438</a>     const content = await fs.readFile(params.path, &quot;utf-8&quot;);</span>
+<span id="L439"><a href="#L439" aria-label="第 439 行"> 439</a> </span>
+<span id="L440"><a href="#L440" aria-label="第 440 行"> 440</a>     // Optional: stream progress</span>
+<span id="L441"><a href="#L441" aria-label="第 441 行"> 441</a>     onUpdate?.({ content: [{ type: &quot;text&quot;, text: &quot;Reading...&quot; }], details: {} });</span>
+<span id="L442"><a href="#L442" aria-label="第 442 行"> 442</a> </span>
+<span id="L443"><a href="#L443" aria-label="第 443 行"> 443</a>     // Optional: add `terminate: true` here to skip the automatic follow-up LLM call</span>
+<span id="L444"><a href="#L444" aria-label="第 444 行"> 444</a>     // when every finalized tool result in the batch does the same.</span>
+<span id="L445"><a href="#L445" aria-label="第 445 行"> 445</a>     return {</span>
+<span id="L446"><a href="#L446" aria-label="第 446 行"> 446</a>       content: [{ type: &quot;text&quot;, text: content }],</span>
+<span id="L447"><a href="#L447" aria-label="第 447 行"> 447</a>       details: { path: params.path, size: content.length },</span>
+<span id="L448"><a href="#L448" aria-label="第 448 行"> 448</a>     };</span>
+<span id="L449"><a href="#L449" aria-label="第 449 行"> 449</a>   },</span>
+<span id="L450"><a href="#L450" aria-label="第 450 行"> 450</a> };</span>
+<span id="L451"><a href="#L451" aria-label="第 451 行"> 451</a> </span>
+<span id="L452"><a href="#L452" aria-label="第 452 行"> 452</a> agent.state.tools = [readFileTool];</span>
+<span id="L453"><a href="#L453" aria-label="第 453 行"> 453</a> ```</span>
+<span id="L454"><a href="#L454" aria-label="第 454 行"> 454</a> </span>
+<span id="L455"><a href="#L455" aria-label="第 455 行"> 455</a> ### Error Handling</span>
+<span id="L456"><a href="#L456" aria-label="第 456 行"> 456</a> </span>
+<span id="L457"><a href="#L457" aria-label="第 457 行"> 457</a> **Throw an error** when a tool fails. Do not return error messages as content.</span>
+<span id="L458"><a href="#L458" aria-label="第 458 行"> 458</a> </span>
+<span id="L459"><a href="#L459" aria-label="第 459 行"> 459</a> ```typescript</span>
+<span id="L460"><a href="#L460" aria-label="第 460 行"> 460</a> execute: async (toolCallId, params, signal, onUpdate) =&gt; {</span>
+<span id="L461"><a href="#L461" aria-label="第 461 行"> 461</a>   if (!fs.existsSync(params.path)) {</span>
+<span id="L462"><a href="#L462" aria-label="第 462 行"> 462</a>     throw new Error(`File not found: ${params.path}`);</span>
+<span id="L463"><a href="#L463" aria-label="第 463 行"> 463</a>   }</span>
+<span id="L464"><a href="#L464" aria-label="第 464 行"> 464</a>   // Return content only on success</span>
+<span id="L465"><a href="#L465" aria-label="第 465 行"> 465</a>   return { content: [{ type: &quot;text&quot;, text: &quot;...&quot; }] };</span>
+<span id="L466"><a href="#L466" aria-label="第 466 行"> 466</a> }</span>
+<span id="L467"><a href="#L467" aria-label="第 467 行"> 467</a> ```</span>
+<span id="L468"><a href="#L468" aria-label="第 468 行"> 468</a> </span>
+<span id="L469"><a href="#L469" aria-label="第 469 行"> 469</a> Thrown errors are caught by the agent and reported to the LLM as tool errors with `isError: true`.</span>
+<span id="L470"><a href="#L470" aria-label="第 470 行"> 470</a> </span>
+<span id="L471"><a href="#L471" aria-label="第 471 行"> 471</a> Return `terminate: true` from `execute()`, a blocked `beforeToolCall`, or `afterToolCall` to hint that the agent should stop after the current tool batch. This only takes effect when every finalized tool result in the batch is terminating. The hint is runtime-only; emitted `toolResult` transcript messages remain standard LLM tool results.</span>
+<span id="L472"><a href="#L472" aria-label="第 472 行"> 472</a> </span>
+<span id="L473"><a href="#L473" aria-label="第 473 行"> 473</a> ## Proxy Usage</span>
+<span id="L474"><a href="#L474" aria-label="第 474 行"> 474</a> </span>
+<span id="L475"><a href="#L475" aria-label="第 475 行"> 475</a> For browser apps that proxy through a backend:</span>
+<span id="L476"><a href="#L476" aria-label="第 476 行"> 476</a> </span>
+<span id="L477"><a href="#L477" aria-label="第 477 行"> 477</a> ```typescript</span>
+<span id="L478"><a href="#L478" aria-label="第 478 行"> 478</a> import { Agent, streamProxy } from &quot;@earendil-works/pi-agent-core&quot;;</span>
+<span id="L479"><a href="#L479" aria-label="第 479 行"> 479</a> </span>
+<span id="L480"><a href="#L480" aria-label="第 480 行"> 480</a> const agent = new Agent({</span>
+<span id="L481"><a href="#L481" aria-label="第 481 行"> 481</a>   streamFn: (model, context, options) =&gt;</span>
+<span id="L482"><a href="#L482" aria-label="第 482 行"> 482</a>     streamProxy(model, context, {</span>
+<span id="L483"><a href="#L483" aria-label="第 483 行"> 483</a>       ...options,</span>
+<span id="L484"><a href="#L484" aria-label="第 484 行"> 484</a>       authToken: &quot;...&quot;,</span>
+<span id="L485"><a href="#L485" aria-label="第 485 行"> 485</a>       proxyUrl: &quot;https://your-server.com&quot;,</span>
+<span id="L486"><a href="#L486" aria-label="第 486 行"> 486</a>     }),</span>
+<span id="L487"><a href="#L487" aria-label="第 487 行"> 487</a> });</span>
+<span id="L488"><a href="#L488" aria-label="第 488 行"> 488</a> ```</span>
+<span id="L489"><a href="#L489" aria-label="第 489 行"> 489</a> </span>
+<span id="L490"><a href="#L490" aria-label="第 490 行"> 490</a> ## Low-Level API</span>
+<span id="L491"><a href="#L491" aria-label="第 491 行"> 491</a> </span>
+<span id="L492"><a href="#L492" aria-label="第 492 行"> 492</a> For direct control without the Agent class:</span>
+<span id="L493"><a href="#L493" aria-label="第 493 行"> 493</a> </span>
+<span id="L494"><a href="#L494" aria-label="第 494 行"> 494</a> ```typescript</span>
+<span id="L495"><a href="#L495" aria-label="第 495 行"> 495</a> import { agentLoop, agentLoopContinue } from &quot;@earendil-works/pi-agent-core&quot;;</span>
+<span id="L496"><a href="#L496" aria-label="第 496 行"> 496</a> </span>
+<span id="L497"><a href="#L497" aria-label="第 497 行"> 497</a> const context: AgentContext = {</span>
+<span id="L498"><a href="#L498" aria-label="第 498 行"> 498</a>   messages: [{ role: &quot;system&quot;, content: &quot;You are helpful.&quot;, timestamp: Date.now() }],</span>
+<span id="L499"><a href="#L499" aria-label="第 499 行"> 499</a>   tools: [],</span>
+<span id="L500"><a href="#L500" aria-label="第 500 行"> 500</a> };</span>
+<span id="L501"><a href="#L501" aria-label="第 501 行"> 501</a> </span>
+<span id="L502"><a href="#L502" aria-label="第 502 行"> 502</a> const config: AgentLoopConfig = {</span>
+<span id="L503"><a href="#L503" aria-label="第 503 行"> 503</a>   model: getModel(&quot;openai&quot;, &quot;gpt-4o&quot;),</span>
+<span id="L504"><a href="#L504" aria-label="第 504 行"> 504</a>   convertToLlm: (msgs) =&gt; msgs.filter(m =&gt; [&quot;user&quot;, &quot;assistant&quot;, &quot;toolResult&quot;].includes(m.role)),</span>
+<span id="L505"><a href="#L505" aria-label="第 505 行"> 505</a>   toolExecution: &quot;parallel&quot;,  // overridden by per-tool executionMode if set</span>
+<span id="L506"><a href="#L506" aria-label="第 506 行"> 506</a>   beforeToolCall: async ({ toolCall, args, context }) =&gt; undefined,</span>
+<span id="L507"><a href="#L507" aria-label="第 507 行"> 507</a>   afterToolCall: async ({ toolCall, result, isError, context }) =&gt; undefined,</span>
+<span id="L508"><a href="#L508" aria-label="第 508 行"> 508</a> };</span>
+<span id="L509"><a href="#L509" aria-label="第 509 行"> 509</a> </span>
+<span id="L510"><a href="#L510" aria-label="第 510 行"> 510</a> const userMessage = { role: &quot;user&quot;, content: &quot;Hello&quot;, timestamp: Date.now() };</span>
+<span id="L511"><a href="#L511" aria-label="第 511 行"> 511</a> </span>
+<span id="L512"><a href="#L512" aria-label="第 512 行"> 512</a> const streamFn = models.streamSimple.bind(models);</span>
+<span id="L513"><a href="#L513" aria-label="第 513 行"> 513</a> for await (const event of agentLoop([userMessage], context, config, undefined, streamFn)) {</span>
+<span id="L514"><a href="#L514" aria-label="第 514 行"> 514</a>   console.log(event.type);</span>
+<span id="L515"><a href="#L515" aria-label="第 515 行"> 515</a> }</span>
+<span id="L516"><a href="#L516" aria-label="第 516 行"> 516</a> </span>
+<span id="L517"><a href="#L517" aria-label="第 517 行"> 517</a> // Continue from existing context</span>
+<span id="L518"><a href="#L518" aria-label="第 518 行"> 518</a> for await (const event of agentLoopContinue(context, config, undefined, streamFn)) {</span>
+<span id="L519"><a href="#L519" aria-label="第 519 行"> 519</a>   console.log(event.type);</span>
+<span id="L520"><a href="#L520" aria-label="第 520 行"> 520</a> }</span>
+<span id="L521"><a href="#L521" aria-label="第 521 行"> 521</a> ```</span>
+<span id="L522"><a href="#L522" aria-label="第 522 行"> 522</a> </span>
+<span id="L523"><a href="#L523" aria-label="第 523 行"> 523</a> These low-level streams are observational. They preserve event order, but they do not wait for your async event handling to settle before later producer phases continue. If you need message processing to act as a barrier before tool preflight, use the `Agent` class instead of raw `agentLoop()` or `agentLoopContinue()`.</span>
+<span id="L524"><a href="#L524" aria-label="第 524 行"> 524</a> </span>
+<span id="L525"><a href="#L525" aria-label="第 525 行"> 525</a> ## License</span>
+<span id="L526"><a href="#L526" aria-label="第 526 行"> 526</a> </span>
+<span id="L527"><a href="#L527" aria-label="第 527 行"> 527</a> MIT</span></code></pre></body></html>

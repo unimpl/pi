@@ -1,0 +1,128 @@
+{
+  "commit": "36b60d2e8985899743c4cf5bd5f8929832a3f05d",
+  "date": "2026-09-23",
+  "workspaceDiffOutsideStudy": "",
+  "sources": {
+    "packages/coding-agent/src/core/sdk.ts": {
+      "sha256": "938f9f3d484544040e7a06e6f89a07adb72ab007ea660bcaf4a8c1846d20a021",
+      "lines": 410
+    },
+    "packages/coding-agent/src/core/agent-session.ts": {
+      "sha256": "9a3cdcf299f47bdfb03f7bd850466492c2c4b9120f5245ba64e52904de95d4b3",
+      "lines": 3625
+    },
+    "packages/coding-agent/src/core/session-manager.ts": {
+      "sha256": "36a474d8cf6f03f2c906680aed5569837f8188e0dc2fc878e9dbdc47b9a14d04",
+      "lines": 1786
+    },
+    "packages/agent/src/types.ts": {
+      "sha256": "b39a716944e8eee79562354e0c1a6a96dd5fb364078084cc6903fbcd61ed3d5a",
+      "lines": 463
+    },
+    "packages/agent/src/agent.ts": {
+      "sha256": "a586b3b5488ce3018a89dcd30350689942e72cd9fe1cc2a3d8bb1360e355476c",
+      "lines": 607
+    },
+    "package.json": {
+      "sha256": "c33b8c67a66ac49606cf90cc2389d3d83478d7e4c80ebb14475fb2c63560d17e",
+      "lines": 75
+    },
+    "packages/agent/README.md": {
+      "sha256": "3a3fe6ed39fed6eae0678bb7ce2b1ed055c7198dc717b01cd810b741ed3e9200",
+      "lines": 527
+    },
+    "packages/ai/README.md": {
+      "sha256": "232e534004b263a5bc1aaef52da9a0ef0e991999627c8be6e32b06f6e4ace5db",
+      "lines": 1752
+    },
+    "packages/coding-agent/src/cli.ts": {
+      "sha256": "bb46a9e981c56b15d35858ec1ddbf629a9125eecb2b8b78ec4ac6e033d2b0d47",
+      "lines": 6
+    },
+    "packages/coding-agent/src/main.ts": {
+      "sha256": "f985c35a729c2234ddf634c490bf214b9cdc2670489fae1f5eea570e45d5a5ff",
+      "lines": 980
+    },
+    "packages/agent/src/stream-fn.ts": {
+      "sha256": "1f9dee101a5ce1052558458d9ce47e53e05187224e879217899059a80d90bc45",
+      "lines": 20
+    },
+    "packages/durable/src/index.ts": {
+      "sha256": "5a704d62ccb304ee990bd651b97c353387ef7268bf858c98cd617d3354c601ee",
+      "lines": 23
+    },
+    "packages/agent/src/agent-loop.ts": {
+      "sha256": "2f4e228055729f684e01349813a6ab903b0f646f6320d5f892ef77303561b82e",
+      "lines": 857
+    },
+    "packages/ai/src/utils/event-stream.ts": {
+      "sha256": "147084657f76665ff7d6c8dcd6eb0745149e3aaee3e7b9c272b315a1b5679386",
+      "lines": 110
+    },
+    "packages/coding-agent/test/file-mutation-queue.test.ts": {
+      "sha256": "d65f903a056b4cbfd33850986b5a5ffec394b8340a1db491737f892d0e2d4462",
+      "lines": 274
+    },
+    "packages/ai/src/types.ts": {
+      "sha256": "3b777458915620ce42677546e79467bcf901165e6289c211bb03a48faa78a515",
+      "lines": 990
+    },
+    "packages/ai/src/providers/openai.ts": {
+      "sha256": "1904f9511221f47bbe890dc007571add9ac16ab28cd48c4090b58f13950cbfd0",
+      "lines": 15
+    },
+    "packages/ai/src/api/anthropic-messages.ts": {
+      "sha256": "d1316907eaeac7d547b75e3c5ec1eb92c7b6af515b74917d068f3e262cde6209",
+      "lines": 1520
+    },
+    "packages/ai/src/api/openai-responses-shared.ts": {
+      "sha256": "0caa593dfd0d1a54ac02361745cbc963ba5f93fe2856db7fa5e8512f59a27b36",
+      "lines": 793
+    },
+    "packages/ai/src/api/google-generative-ai.ts": {
+      "sha256": "c20f1a40875b2106b6d39d8b7837cd30a882c6a5fcf8c311ccc42a090e18e956",
+      "lines": 470
+    },
+    "packages/coding-agent/src/core/tools/file-mutation-queue.ts": {
+      "sha256": "33cb06ac9bcdf32c8b84d9d12e33be44c503a7670f668e003a3262cd34294d11",
+      "lines": 61
+    },
+    "README.md": {
+      "sha256": "fe13915e217f905739b64124cbb03b72758fa2081b7198cabeefaee4914a6f14",
+      "lines": 116
+    },
+    "packages/coding-agent/src/core/compaction/compaction.ts": {
+      "sha256": "48a515082128b096677c8caa53290b164b169af8872ce214983bfc8d646f2d97",
+      "lines": 1024
+    },
+    "packages/coding-agent/src/core/messages.ts": {
+      "sha256": "5397e3c96c9504266e4ee8b6e88d5098b3280ee7dbb0c687b74708c62a06c8d4",
+      "lines": 196
+    },
+    "packages/coding-agent/docs/session-format.md": {
+      "sha256": "4118ea4ff2886d53f44bcf730d1bd6880b1d596b932ac1265f4c585240a0bff8",
+      "lines": 466
+    },
+    "packages/coding-agent/src/core/agent-session-runtime.ts": {
+      "sha256": "5b348a4db837a2564367dd93b343c67f3b0c28a2f753ff71adcb48d08b5644e7",
+      "lines": 449
+    },
+    "packages/chord/README.md": {
+      "sha256": "064c77a40e0d78077b74842a4d0612d4a75b7cbdc5f729d48bf2ce668523a5c3",
+      "lines": 205
+    },
+    "packages/client/README.md": {
+      "sha256": "be336696a8f91c5cb40a240c672926dc96cc8f30e38ab97afc8d2a6885cb7205",
+      "lines": 72
+    },
+    "packages/server/README.md": {
+      "sha256": "ed0733482685ca26731a64d6898e9360c69c471e16d7e20b545e696413d29c9c",
+      "lines": 79
+    },
+    "packages/protocol/README.md": {
+      "sha256": "0cb30b80c30fe195cf7f22fe3a3934cd13f365d33c10764132540e6b18ca9457",
+      "lines": 41
+    }
+  },
+  "diagramRenderer": "beautiful-mermaid@1.1.3"
+}

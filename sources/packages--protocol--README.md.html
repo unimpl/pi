@@ -1,0 +1,41 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>packages/protocol/README.md · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>packages/protocol/README.md</h1><p>本地快照 · 36b60d2e8985 · 2026-09-23</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> # @earendil-works/pi-protocol</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a> </span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a> Runtime-neutral routed envelopes, CBOR encoding, and byte-stream framing for the experimental Pi protocol.</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a> </span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a> Protocol version `8` defines:</span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a> </span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a> - a version handshake that identifies the logical `serverId`;</span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a> - explicit server and Session request targets;</span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a> - correlated requests and responses with opaque strict-JSON payloads;</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a> - request cancellation, opaque subscription updates, and out-of-band attachment changes;</span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a> - non-empty opaque error codes and bounded transport messages.</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a> </span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a> A server target contains `{ serverId }`; a Session target contains `{ serverId, sessionId, attachmentId }`. The combined route fences calls to one logical server, durable Session, and live presentation attachment. Management `attach()` and `detach()` return no routing identifiers; the server publishes the selected live route in an out-of-band `attachment` message. Disconnecting releases only that presentation&#x27;s attachment after admitted calls settle.</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a> </span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a> Chord owns the payload semantics carried inside these envelopes: `{ serviceId, instance?, member, args }` calls, the `$chord.service` control vocabulary, service catalogues, subscription snapshots and updates, service error codes, and the independent Delta path codecs for replicated states. `pi-protocol` validates that each opaque payload is strict JSON but does not validate or export its Chord grammar. Clients and servers parse those values through `@earendil-works/chord` at the service adapter boundary.</span>
+<span id="L16"><a href="#L16" aria-label="第 16 行">  16</a> </span>
+<span id="L17"><a href="#L17" aria-label="第 17 行">  17</a> Session-directory state, management results, transcripts, models, plugins, and all other application values remain opaque service data. The real `Session` and `AgentHarness` remain process-local. Server and Session calls route opaquely to their owning providers, where Chord and the application validate and invoke them.</span>
+<span id="L18"><a href="#L18" aria-label="第 18 行">  18</a> </span>
+<span id="L19"><a href="#L19" aria-label="第 19 行">  19</a> Server and worker lifecycle is intentionally outside this public protocol. The experimental local coordinator is only an opaque message router; each replaceable server process owns the private lifecycle protocol.</span>
+<span id="L20"><a href="#L20" aria-label="第 20 行">  20</a> </span>
+<span id="L21"><a href="#L21" aria-label="第 21 行">  21</a> Each wire frame consists of a four-byte unsigned big-endian payload length followed by one definite-length CBOR item. `encodeClientMessage()` and `encodeServerMessage()` validate and encode complete frames. `ClientMessageDecoder` and `ServerMessageDecoder` accept arbitrary stream fragmentation and coalescing.</span>
+<span id="L22"><a href="#L22" aria-label="第 22 行">  22</a> </span>
+<span id="L23"><a href="#L23" aria-label="第 23 行">  23</a> ```ts</span>
+<span id="L24"><a href="#L24" aria-label="第 24 行">  24</a> import {</span>
+<span id="L25"><a href="#L25" aria-label="第 25 行">  25</a>   PROTOCOL_VERSION,</span>
+<span id="L26"><a href="#L26" aria-label="第 26 行">  26</a>   encodeClientMessage,</span>
+<span id="L27"><a href="#L27" aria-label="第 27 行">  27</a>   ServerMessageDecoder,</span>
+<span id="L28"><a href="#L28" aria-label="第 28 行">  28</a>   type ClientHello,</span>
+<span id="L29"><a href="#L29" aria-label="第 29 行">  29</a> } from &quot;@earendil-works/pi-protocol&quot;;</span>
+<span id="L30"><a href="#L30" aria-label="第 30 行">  30</a> </span>
+<span id="L31"><a href="#L31" aria-label="第 31 行">  31</a> const hello: ClientHello = { type: &quot;hello&quot;, version: PROTOCOL_VERSION };</span>
+<span id="L32"><a href="#L32" aria-label="第 32 行">  32</a> transport.send(encodeClientMessage(hello));</span>
+<span id="L33"><a href="#L33" aria-label="第 33 行">  33</a> </span>
+<span id="L34"><a href="#L34" aria-label="第 34 行">  34</a> const decoder = new ServerMessageDecoder({ maxFrameLength: 1024 * 1024 });</span>
+<span id="L35"><a href="#L35" aria-label="第 35 行">  35</a> for (const message of decoder.push(incomingChunk)) handleServerMessage(message);</span>
+<span id="L36"><a href="#L36" aria-label="第 36 行">  36</a> decoder.end();</span>
+<span id="L37"><a href="#L37" aria-label="第 37 行">  37</a> ```</span>
+<span id="L38"><a href="#L38" aria-label="第 38 行">  38</a> </span>
+<span id="L39"><a href="#L39" aria-label="第 39 行">  39</a> All envelope schemas reject unknown object properties, and codecs recursively reject non-JSON opaque payloads, including non-finite numbers, byte arrays, `undefined`, prototypes, and cycles. Envelope violations, malformed CBOR, and invalid framing throw `ProtocolValidationError`. Payload-specific adapters must perform their own semantic validation after decoding. Transports must preserve byte order. Peer authentication and authenticated service contexts are not implemented by the experimental transport.</span>
+<span id="L40"><a href="#L40" aria-label="第 40 行">  40</a> </span>
+<span id="L41"><a href="#L41" aria-label="第 41 行">  41</a> Default limits are 16 MiB per CBOR payload/frame, 1,000,000 array elements or map entries, and 64 nested item levels. The protocol is experimental and has no compatibility guarantees.</span></code></pre></body></html>

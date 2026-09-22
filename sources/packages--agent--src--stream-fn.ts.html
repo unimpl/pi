@@ -1,0 +1,20 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>packages/agent/src/stream-fn.ts · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>packages/agent/src/stream-fn.ts</h1><p>本地快照 · 36b60d2e8985 · 2026-09-23</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> import type { StreamFn } from &quot;./types.ts&quot;;</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a> </span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a> let defaultStreamFn: StreamFn | undefined;</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a> </span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a> /**</span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a>  * Configure the fallback used by Agent and low-level loops when callers omit streamFn.</span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a>  *</span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a>  * Hosts that provide a default model runtime can install its stream function here</span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a>  * without making pi-agent-core depend on a provider catalog or compatibility layer.</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a>  */</span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a> export function setDefaultStreamFn(streamFn: StreamFn | undefined): void {</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a> 	defaultStreamFn = streamFn;</span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a> }</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a> </span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a> export function getDefaultStreamFn(): StreamFn {</span>
+<span id="L16"><a href="#L16" aria-label="第 16 行">  16</a> 	if (!defaultStreamFn) {</span>
+<span id="L17"><a href="#L17" aria-label="第 17 行">  17</a> 		throw new Error(&quot;No default stream function configured. Pass streamFn explicitly or call setDefaultStreamFn().&quot;);</span>
+<span id="L18"><a href="#L18" aria-label="第 18 行">  18</a> 	}</span>
+<span id="L19"><a href="#L19" aria-label="第 19 行">  19</a> 	return defaultStreamFn;</span>
+<span id="L20"><a href="#L20" aria-label="第 20 行">  20</a> }</span></code></pre></body></html>

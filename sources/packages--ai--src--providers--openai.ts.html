@@ -1,0 +1,15 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>packages/ai/src/providers/openai.ts · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>packages/ai/src/providers/openai.ts</h1><p>本地快照 · 36b60d2e8985 · 2026-09-23</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> import { openAIResponsesApi } from &quot;../api/openai-responses.lazy.ts&quot;;</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a> import { envApiKeyAuth } from &quot;../auth/helpers.ts&quot;;</span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a> import { createProvider, type Provider } from &quot;../models.ts&quot;;</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a> import { OPENAI_MODELS } from &quot;./openai.models.ts&quot;;</span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a> </span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a> export function openaiProvider(): Provider&lt;&quot;openai-responses&quot;&gt; {</span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a> 	return createProvider({</span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a> 		id: &quot;openai&quot;,</span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a> 		name: &quot;OpenAI&quot;,</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a> 		baseUrl: &quot;https://api.openai.com/v1&quot;,</span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a> 		auth: { apiKey: envApiKeyAuth(&quot;OpenAI API key&quot;, [&quot;OPENAI_API_KEY&quot;]) },</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a> 		models: Object.values(OPENAI_MODELS),</span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a> 		api: openAIResponsesApi(),</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a> 	});</span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a> }</span></code></pre></body></html>

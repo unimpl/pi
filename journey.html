@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="通过源码、图解与设计取舍理解 Pi Agent。面向有 Go、Rust、C++ 经验的开发者。"><title>一次请求，究竟经过了什么 · Pi 设计读本</title><link rel="icon" href="assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="assets/book.css"><script src="assets/search-index.js" defer></script><script src="assets/book.js" defer></script></head>
+<body data-page="journey"><a class="skip" href="#main">跳到正文</a><header class="topbar"><a class="brand" href="index.html"><span class="brand-mark">π</span>Pi 设计读本</a><span class="top-caption">从代码，读懂设计。</span><a class="search-link" href="search.html">搜索全书</a><button class="menu-toggle js-only" type="button" aria-expanded="false" aria-controls="chapter-nav">目录</button></header>
+<div class="book-layout"><aside class="sidebar" id="chapter-nav"><nav aria-label="章节"><a class="overview-link" href="index.html">阅读指南</a><a href="foundations.html" ><span>01</span>先认识 Pi 的核心对象</a><a href="architecture.html" ><span>02</span>沿着职责，而非目录理解架构</a><a href="journey.html" aria-current=page><span>03</span>一次请求，究竟经过了什么</a><a href="control.html" ><span>04</span>控制权必须留在运行时</a><a href="models.html" ><span>05</span>统一模型接口，但保留差异</a><a href="tools.html" ><span>06</span>工具是能力，也是边界</a><a href="context.html" ><span>07</span>记住历史，不等于发送全部历史</a><a href="infrastructure.html" ><span>08</span>从本地助手走向可组合系统</a><a href="principles.html" ><span>09</span>把实现读成设计判断</a><a href="reference.html">术语与阅读路线</a><a href="evidence.html">证据与版本说明</a></nav></aside>
+<main id="main" tabindex="-1"><div class="chapter-meta">第 03 章 / 核心</div><h1>一次请求，究竟经过了什么</h1><p class="subtitle">跟随消息，而不是跟随屏幕上的文字。</p><p class="lead">以“读取 README.md 并解释项目”为例。下面的轨迹是根据低层循环整理的教学演示，文件内容与模型回答是示例，不访问文件、不请求真实模型。</p><section class="chapter-guide" aria-labelledby="design-lens"><div class="guide-heading"><h2 id="design-lens">本章先抓什么</h2><span>必须掌握</span></div><dl><div><dt>为什么需要</dt><dd>一次用户请求可能包含多次模型调用。工具结果只有作为新消息回到模型，才会影响下一步判断。</dd></div><div><dt>行业常见做法</dt><dd>直接工具循环与多数 SDK 都采用 call → execute → append result → call again。图式工作流把同一过程显式表示成节点和边，便于固定分支与恢复。</dd></div><div><dt>自己实现时</dt><dd>先画清一次完整时序，给每个 tool call 稳定 ID，明确什么时候追加消息、什么时候结束、什么时候算运行真正结算。</dd></div><div><dt>现在可以忽略</dt><dd>流式界面的逐字效果。流式输出改善体验，却不决定 Agent 是否正确。先保证非流式完整路径成立。</dd></div></dl></section><figure class="diagram"><div class="diagram-head"><span>一次请求的时序</span></div><img src="diagrams/journey.svg" alt="一次用户请求包含两次模型调用，中间经过一次 read 工具执行。" loading="lazy"><figcaption>一次用户请求包含两次模型调用，中间经过一次 read 工具执行。</figcaption></figure><section class="prose-section" aria-labelledby="input"><h2 id="input">输入：先成为有角色的消息</h2><p>Agent.prompt 接收字符串或消息。字符串会被包装为 user 消息；Agent 为本次运行建立取消控制器，并拒绝同一实例同时启动第二个 prompt。正在运行时的新输入应走 steer 或 followUp 队列。</p><p>runAgentLoop 把新消息接到已有上下文后面，发送 agent_start、turn_start 和相应消息事件。开始请求前还会对比当前可执行工具与历史中的工具声明，把变更写成 system 消息。这解决了“模型以为工具存在，但宿主已经换掉工具集合”的不一致。</p></section><section class="prose-section" aria-labelledby="boundary"><h2 id="boundary">请求边界：先变换，再转换</h2><p>streamAssistantResponse 先执行 <code>transformContext</code>，仍在 AgentMessage 世界里操作；随后执行 <code>convertToLlm</code>，转换为模型支持的 Message；最后 normalizeContext 形成标准请求上下文，再调用 streamFn。</p><p>为什么分两步？应用可能有 bashExecution、压缩摘要、通知等消息。调整上下文时需要理解应用语义，而 API 适配时只应面对约定好的模型消息。若把两件事合成一个到处特殊判断的序列化函数，UI 特有数据容易泄漏到模型协议。</p><p>SDK 的 convertToLlm 还会根据 blockImages 设置过滤图片。这说明“本地记录了什么”和“这次允许发什么”是两个决策。模型请求边界正是统一实施这类转换的位置。</p></section><section class="prose-section" aria-labelledby="response"><h2 id="response">响应：先收齐工具调用，再执行</h2><p>模型流先产生 start，随后产生 text、thinking 或 toolcall 的增量事件。循环更新当前部分消息并发出 message_update，最终使用 response.result() 的结果结算完整消息。流式工具参数尚未收齐时，不会在每个增量上直接执行工具。</p><p>示例中，最终 assistant 内容包含 read 调用。循环提取 toolCall，执行工具批次。read 返回内容后，运行时生成带 toolCallId 的 toolResult，把结果接到上下文，再进入下一轮模型请求。调用 ID 是结果与请求的关联键，不能只用工具名配对：一次响应可能两次调用同名工具。</p></section><section class="prose-section" aria-labelledby="ending"><h2 id="ending">结束：无工具可做，也没有待处理消息</h2><p>第二次模型响应给出解释，没有工具调用。循环还要检查 steering 与 follow-up 消息；都没有时才发送 agent_end。若 shouldStopAfterTurn 要求停止，会在当前 turn 完成后提前退出；模型 error 或 aborted 也有明确的终止路径。</p><p><strong>agent_end 不是“所有监听器已经完成”。</strong> Agent 类会等待事件订阅者，然后 finishRun 才清除运行状态。日志写入或会话保存若属于被等待的监听工作，也在这次运行的结算边界内。这一细节直接影响下一次 prompt 何时能安全开始。</p></section><section class="prose-section" aria-labelledby="tradeoff"><h2 id="tradeoff">为什么不让模型直接拿文件系统</h2><p class="analysis">分析推断：显式的工具请求与结果保留了执行边界，使宿主能验证、记录、拦截和替换操作。代价是每次工具反馈通常需要下一轮模型调用，增加延迟和上下文占用。它适合需要依据外部结果逐步决策的任务；固定业务流程不必为了“Agent”这个名字把每一步都交给模型选择。</p><p>另一个代价是上下文增长。读取大文件会把大量结果带回模型，产品层因此需要截断、分段读取和压缩等策略。基础循环负责传递结果，结果应该多大则由具体工具和应用共同承担。</p></section><section class="prose-section self-check" aria-labelledby="self-check"><h2 id="self-check">本章自测</h2><p>先尝试独立回答，再展开参考答案。</p><ol class="question-list"><li>字符串输入到达模型前经历哪些主要边界？</li><li>为什么 Pi 不在流式 toolCall 参数刚出现时立刻执行工具？</li><li>为什么工具执行完成后通常还要再次请求模型？</li><li>什么时候一次请求才算真正结算？</li></ol><details class="reference-answer"><summary>查看参考答案</summary><ol><li><strong>字符串输入到达模型前经历哪些主要边界？</strong> 字符串先包装成 user AgentMessage；循环声明工具变化；transformContext 在应用消息层调整上下文；convertToLlm 转成模型消息；normalizeContext 形成标准请求，最后由 StreamFn 调用 provider。</li><li><strong>为什么 Pi 不在流式 toolCall 参数刚出现时立刻执行工具？</strong> 增量参数可能尚未完成，也可能因长度限制而被截断。Pi 等完整 assistant message 和 stopReason 结算后再提取、校验和执行调用。</li><li><strong>为什么工具执行完成后通常还要再次请求模型？</strong> 工具在宿主进程执行，模型不会自动看到结果。运行时必须把 toolResult 追加为消息，再发起下一 turn，模型才能基于真实结果继续判断。</li><li><strong>什么时候一次请求才算真正结算？</strong> 循环确认没有工具续轮、steering 或 follow-up 后发送 agent_end；Agent 还会等待异步事件监听器完成，随后 finishRun 清除 active run，waitForIdle 才完成。</li></ol></details></section><section><h2 id="evidence">源码证据</h2><p class="muted">摘录来自本地代码快照。点开可核对原文和完整文件；项目文档与分析推断在正文单独标注。</p><details class="evidence"><summary>文本输入变成 user 消息。</summary><p class="source-path">packages/agent/src/agent.ts · L406</p><pre><code> 406  	private normalizePromptInput(
+ 407  		input: string | AgentMessage | AgentMessage[],
+ 408  		images?: ImageContent[],
+ 409  	): AgentMessage[] {
+ 410  		if (Array.isArray(input)) {
+ 411  			return input;
+ 412  		}
+ 413  
+ 414  		if (typeof input !== &quot;string&quot;) {
+ 415  			return [input];
+ 416  		}
+ 417  
+ 418  		const content: Array&lt;TextContent | ImageContent&gt; = [{ type: &quot;text&quot;, text: input }];
+ 419  		if (images &amp;&amp; images.length &gt; 0) {
+ 420  			content.push(...images);
+ 421  		}
+ 422  		return [{ role: &quot;user&quot;, content, timestamp: Date.now() }];
+ 423  	}
+ 424  
+ 425  	private async runPromptMessages(
+ 426  		messages: AgentMessage[],
+ 427  		options: { skipInitialSteeringPoll?: boolean } = {},
+ 428  	): Promise&lt;void&gt; {</code></pre><a href="sources/packages--agent--src--agent.ts.html#L406">查看本地源码快照与行号</a></details><details class="evidence"><summary>上下文变换、消息转换与模型调用的顺序。</summary><p class="source-path">packages/agent/src/agent-loop.ts · L346</p><pre><code> 346  	// Apply context transform if configured (AgentMessage[] → AgentMessage[])
+ 347  	let messages = context.messages;
+ 348  	if (config.transformContext) {
+ 349  		messages = await config.transformContext(messages, signal);
+ 350  	}
+ 351  
+ 352  	// Convert to LLM-compatible messages (AgentMessage[] → Message[])
+ 353  	const llmMessages = await config.convertToLlm(messages);
+ 354  
+ 355  	const llmContext = normalizeContext({ messages: llmMessages });
+ 356  
+ 357  	// Resolve API key (important for expiring tokens)
+ 358  	const resolvedApiKey =
+ 359  		(config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
+ 360  
+ 361  	const response = await streamFunction(config.model, llmContext, {
+ 362  		...config,
+ 363  		apiKey: resolvedApiKey,
+ 364  		signal,</code></pre><a href="sources/packages--agent--src--agent-loop.ts.html#L346">查看本地源码快照与行号</a></details><details class="evidence"><summary>响应完成之后执行工具，并把结果追加到上下文。</summary><p class="source-path">packages/agent/src/agent-loop.ts · L228</p><pre><code> 228  			const toolCalls = message.content.filter((c) =&gt; c.type === &quot;toolCall&quot;);
+ 229  
+ 230  			const toolResults: ToolResultMessage[] = [];
+ 231  			hasMoreToolCalls = false;
+ 232  			if (toolCalls.length &gt; 0) {
+ 233  				// A &quot;length&quot; stop means the output was cut off by the token limit, so
+ 234  				// every tool call in the message may carry truncated arguments. Fail
+ 235  				// them all instead of executing potentially borked calls.
+ 236  				const executedToolBatch =
+ 237  					message.stopReason === &quot;length&quot;
+ 238  						? await failToolCallsFromTruncatedMessage(toolCalls, emit)
+ 239  						: await executeToolCalls(currentContext, message, config, signal, emit);
+ 240  				toolResults.push(...executedToolBatch.messages);
+ 241  				hasMoreToolCalls = !executedToolBatch.terminate;
+ 242  
+ 243  				for (const result of toolResults) {
+ 244  					currentContext.messages.push(result);
+ 245  					newMessages.push(result);
+ 246  				}
+ 247  			}
+ 248  
+ 249  			await emit({ type: &quot;turn_end&quot;, message, toolResults });
+ 250  
+ 251  			lastCompletedTurn = {
+ 252  				message,
+ 253  				toolResults,
+ 254  				context: currentContext,</code></pre><a href="sources/packages--agent--src--agent-loop.ts.html#L228">查看本地源码快照与行号</a></details><details class="evidence"><summary>运行结算清理在事件处理完成后发生。</summary><p class="source-path">packages/agent/src/agent.ts · L544</p><pre><code> 544  	private finishRun(): void {
+ 545  		this._state.isStreaming = false;
+ 546  		this._state.streamingMessage = undefined;
+ 547  		this._state.pendingToolCalls = new Set&lt;string&gt;();
+ 548  		this.activeRun?.resolve();
+ 549  		this.activeRun = undefined;
+ 550  	}
+ 551  
+ 552  	/**</code></pre><a href="sources/packages--agent--src--agent.ts.html#L544">查看本地源码快照与行号</a></details></section><nav class="chapter-pager" aria-label="上下章"><a href="architecture.html">上一页<br><strong>沿着职责，而非目录理解架构</strong></a><a href="control.html">下一页<br><strong>控制权必须留在运行时</strong></a></nav><footer class="page-footer">Pi 设计读本 · 本地源码研究<br>代码基线 <code>36b60d2e8985</code> · 2026-09-23<br><a href="evidence.html">证据规则与分析边界</a></footer></main><aside class="page-toc" aria-label="本页目录"><span>本页内容</span><a href="#design-lens">本章重点</a><a href="#input">输入：先成为有角色的消息</a><a href="#boundary">请求边界：先变换，再转换</a><a href="#response">响应：先收齐工具调用，再执行</a><a href="#ending">结束：无工具可做，也没有待处理消息</a><a href="#tradeoff">为什么不让模型直接拿文件系统</a><a href="#self-check">本章自测</a><a href="#evidence">源码证据</a><a href="#main">回到顶部</a></aside></div><noscript><p class="noscript-note">JavaScript 已关闭：正文、源码、图表和章节导航仍可阅读；全文搜索需要 JavaScript。</p></noscript></body></html>

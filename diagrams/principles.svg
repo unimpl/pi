@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 655.48 254.70000000000002" width="655.48" height="254.70000000000002" style="--bg:#f0f1e9;--fg:#24392e;--line:#758570;--accent:#285e4c;--muted:#59645e;--surface:#e6eadd;--border:#9ead97;background:var(--bg)">
+<style>
+  text { font-family: 'PingFang SC', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="A" data-to="B" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="327.74,60.900000000000006 327.74,90.9 89.435,90.9 89.435,120.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="A" data-to="C" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="327.74,60.900000000000006 327.74,90.9 248.305,90.9 248.305,120.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="A" data-to="D" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="327.74,60.900000000000006 327.74,90.9 407.175,90.9 407.175,120.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="A" data-to="E" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="327.74,60.900000000000006 327.74,90.9 566.0450000000001,90.9 566.0450000000001,120.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="B" data-to="F" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="89.435,157.8 89.435,175.8 327.74,175.8 327.74,193.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="C" data-to="F" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="248.305,157.8 248.305,175.8 327.74,175.8 327.74,193.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="D" data-to="F" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="407.175,157.8 407.175,175.8 327.74,175.8 327.74,193.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="E" data-to="F" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="566.0450000000001,157.8 566.0450000000001,175.8 327.74,175.8 327.74,193.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="node" data-id="A" data-label="一个设计决策" data-shape="rectangle">
+  <rect x="262.305" y="24" width="130.87" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="327.74" y="42.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">一个设计决策</text>
+</g>
+<g class="node" data-id="B" data-label="输入是否可信" data-shape="rectangle">
+  <rect x="24" y="120.9" width="130.87" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="89.435" y="139.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">输入是否可信</text>
+</g>
+<g class="node" data-id="C" data-label="谁拥有副作用" data-shape="rectangle">
+  <rect x="182.87" y="120.9" width="130.87" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="248.305" y="139.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">谁拥有副作用</text>
+</g>
+<g class="node" data-id="D" data-label="何时真正完成" data-shape="rectangle">
+  <rect x="341.74" y="120.9" width="130.87" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="407.175" y="139.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">何时真正完成</text>
+</g>
+<g class="node" data-id="E" data-label="失败如何恢复" data-shape="rectangle">
+  <rect x="500.61" y="120.9" width="130.87" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="566.0450000000001" y="139.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">失败如何恢复</text>
+</g>
+<g class="node" data-id="F" data-label="明确契约与代价" data-shape="rectangle">
+  <rect x="254.89500000000004" y="193.8" width="145.69" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="327.74" y="212.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">明确契约与代价</text>
+</g>
+</svg>

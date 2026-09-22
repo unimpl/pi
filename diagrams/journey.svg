@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 440" width="560" height="440" style="--bg:#f0f1e9;--fg:#24392e;--line:#758570;--accent:#285e4c;--muted:#59645e;--surface:#e6eadd;--border:#9ead97;background:var(--bg)">
+<style>
+  text { font-family: 'PingFang SC', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" />
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1" />
+  </marker>
+</defs>
+<line class="lifeline" data-actor="U" x1="70" y1="70" x2="70" y2="410" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="A" x1="210" y1="70" x2="210" y2="410" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="M" x1="350" y1="70" x2="350" y2="410" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="T" x1="490" y1="70" x2="490" y2="410" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<g class="message" data-from="U" data-to="A" data-label="解释 README" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="70" y1="90" x2="210" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="140" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">解释 README</text>
+</g>
+<g class="message" data-from="A" data-to="M" data-label="消息与工具声明" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="210" y1="130" x2="350" y2="130" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="280" y="120" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">消息与工具声明</text>
+</g>
+<g class="message" data-from="M" data-to="A" data-label="read 调用" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="350" y1="170" x2="210" y2="170" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <text x="280" y="160" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">read 调用</text>
+</g>
+<g class="message" data-from="A" data-to="T" data-label="校验后执行" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="210" y1="210" x2="490" y2="210" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="350" y="200" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">校验后执行</text>
+</g>
+<g class="message" data-from="T" data-to="A" data-label="文件内容" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="490" y1="250" x2="210" y2="250" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <text x="350" y="240" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">文件内容</text>
+</g>
+<g class="message" data-from="A" data-to="M" data-label="追加工具结果的消息" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="210" y1="290" x2="350" y2="290" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="280" y="280" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">追加工具结果的消息</text>
+</g>
+<g class="message" data-from="M" data-to="A" data-label="最终解释" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="350" y1="330" x2="210" y2="330" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <text x="280" y="320" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">最终解释</text>
+</g>
+<g class="message" data-from="A" data-to="U" data-label="完成" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="210" y1="370" x2="70" y2="370" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <text x="140" y="360" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">完成</text>
+</g>
+<g class="actor" data-id="U" data-label="用户" data-type="participant">
+  <rect x="30" y="30" width="80" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="70" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">用户</text>
+</g>
+<g class="actor" data-id="A" data-label="Agent" data-type="participant">
+  <rect x="170" y="30" width="80" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="210" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Agent</text>
+</g>
+<g class="actor" data-id="M" data-label="模型" data-type="participant">
+  <rect x="310" y="30" width="80" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="350" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">模型</text>
+</g>
+<g class="actor" data-id="T" data-label="工具" data-type="participant">
+  <rect x="450" y="30" width="80" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="490" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">工具</text>
+</g>
+</svg>

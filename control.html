@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="通过源码、图解与设计取舍理解 Pi Agent。面向有 Go、Rust、C++ 经验的开发者。"><title>控制权必须留在运行时 · Pi 设计读本</title><link rel="icon" href="assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="assets/book.css"><script src="assets/search-index.js" defer></script><script src="assets/book.js" defer></script></head>
+<body data-page="control"><a class="skip" href="#main">跳到正文</a><header class="topbar"><a class="brand" href="index.html"><span class="brand-mark">π</span>Pi 设计读本</a><span class="top-caption">从代码，读懂设计。</span><a class="search-link" href="search.html">搜索全书</a><button class="menu-toggle js-only" type="button" aria-expanded="false" aria-controls="chapter-nav">目录</button></header>
+<div class="book-layout"><aside class="sidebar" id="chapter-nav"><nav aria-label="章节"><a class="overview-link" href="index.html">阅读指南</a><a href="foundations.html" ><span>01</span>先认识 Pi 的核心对象</a><a href="architecture.html" ><span>02</span>沿着职责，而非目录理解架构</a><a href="journey.html" ><span>03</span>一次请求，究竟经过了什么</a><a href="control.html" aria-current=page><span>04</span>控制权必须留在运行时</a><a href="models.html" ><span>05</span>统一模型接口，但保留差异</a><a href="tools.html" ><span>06</span>工具是能力，也是边界</a><a href="context.html" ><span>07</span>记住历史，不等于发送全部历史</a><a href="infrastructure.html" ><span>08</span>从本地助手走向可组合系统</a><a href="principles.html" ><span>09</span>把实现读成设计判断</a><a href="reference.html">术语与阅读路线</a><a href="evidence.html">证据与版本说明</a></nav></aside>
+<main id="main" tabindex="-1"><div class="chapter-meta">第 04 章 / 核心</div><h1>控制权必须留在运行时</h1><p class="subtitle">循环、队列与事件共同定义“什么时候能继续”。</p><p class="lead">如果用户在工具执行期间补充要求，立即修改正在运行的操作会产生什么后果？如果 UI 显示“完成”，会话还没保存呢？控制设计处理的正是这些时间边界。</p><section class="chapter-guide" aria-labelledby="design-lens"><div class="guide-heading"><h2 id="design-lens">本章先抓什么</h2><span>必须掌握</span></div><dl><div><dt>为什么需要</dt><dd>模型可能持续调用工具，用户也可能中途介入。没有预算、取消和明确的完成边界，循环就可能失控或留下未知副作用。</dd></div><div><dt>行业常见做法</dt><dd>Runner 通常提供 max turns、取消信号、hooks 与事件；可恢复图运行时还会把中断点写入持久状态。Pi 侧重显式循环、队列和生命周期事件。</dd></div><div><dt>自己实现时</dt><dd>至少加入轮数或费用预算、超时、协作式取消和终止原因。把“发出结束事件”“监听器完成”“外部 I/O 完成”分开。</dd></div><div><dt>现在可以忽略</dt><dd>一开始就做跨进程调度。单进程中先证明状态机和副作用结算规则，再决定是否需要持久运行。</dd></div></dl></section><figure class="diagram"><div class="diagram-head"><span>继续与结束的判定</span></div><img src="diagrams/control.svg" alt="模型错误或取消终止；工具反馈与 steering 进入下一轮；follow-up 在原本会停止时消费。" loading="lazy"><figcaption>模型错误或取消终止；工具反馈与 steering 进入下一轮；follow-up 在原本会停止时消费。</figcaption></figure><section class="prose-section" aria-labelledby="loops"><h2 id="loops">两层循环表达两种继续</h2><p>内层循环处理工具反馈与 steering；外层循环处理 Agent 原本要停下时的 follow-up。它们代表不同意图：steering 是“下一轮请改变方向”，follow-up 是“当前工作结束后再做这件事”。</p><p>例子：模型一次请求读取 A、B 两个文件。读取期间用户说“重点看 B”。steering 不会跳过这批已提出的调用，而是在当前 turn 的工具执行完成后注入。若用户发的是“解释完再写摘要”，follow-up 会等到当前循环无工具和 steering 时才进入。</p><p>两类队列可按一次一条或一次全部排空。把输入分开是额外 API 复杂度，却避免了所有消息只有一种抢占语义。不要把 steer 翻译成“立即中断当前工具”。</p></section><section class="prose-section" aria-labelledby="operations"><h2 id="operations">在 Pi 界面中如何触发</h2><table><thead><tr><th>操作</th><th>运行中提交时</th><th>何时进入模型上下文</th></tr></thead><tbody><tr><td>普通 Enter</td><td>作为 steering 排队</td><td>当前 assistant 响应及其工具批次结束后，在下一次模型调用前</td></tr><tr><td>follow-up 快捷键</td><td>作为 follow-up 排队；macOS/Linux 默认 Alt+Enter，Windows 默认 Ctrl+Q，按键可配置</td><td>当前工作已经没有工具续轮和 steering、本来将要结束时</td></tr></tbody></table><p>因此你的理解基本正确：它们通常都是“上一次 run 还没结束时，用户又发了一条消息”。区别不在消息内容，而在排队语义。</p><p>steering 也不是立即打断当前 turn。模型正在流式生成时，它不会终止这次请求；工具正在执行时，它也不会撤销这批工具。它会等待当前 turn 完整结算，然后作为新的 user message 进入下一 turn。真正要停止当前模型或工具，应使用 interrupt/abort。</p><p>follow-up 表达“先完成当前任务，再做这件事”。例如当前目标是修复错误，follow-up 可以是“完成后再写一段变更摘要”。在低层循环中，它会在 Agent 原本准备发出 agent_end 的位置被取出，使活动 run 继续产生后续 turn。</p><h3>Follow-up 与新 run 的真正区别</h3><table><thead><tr><th>边界</th><th>Follow-up</th><th>新 run</th></tr></thead><tbody><tr><td>提交时机</td><td>当前 run 仍活动时预先排队</td><td>通常在上一个 run 已完全结算、Agent 空闲后提交</td></tr><tr><td>agent_end</td><td>循环发现 follow-up 后暂不发送 agent_end</td><td>上一个 run 已发送 agent_end，且等待型监听器已经完成</td></tr><tr><td>生命周期</td><td>继续使用当前 run 的取消信号与运行边界</td><td>发出新的 agent_start，建立新的 run 生命周期</td></tr><tr><td>产品预处理</td><td>输入处理和模板展开已在排队时完成；不会完整重走一次空闲态 prompt 的启动流程</td><td>重新执行鉴权、压缩检查、before_agent_start、工具与系统提示准备等 run 级流程</td></tr></tbody></table><p><strong>模型是否看到不同提示词？不一定。</strong>run 边界本身不会被编码成一条消息。若两条路径最终具有相同的 system 内容、历史消息、新 user message、工具声明、模型和上下文转换结果，那么发送给 provider 的 transcript 可以等价，模型不会知道这是 follow-up 还是新 run。</p><p>输入会在这些情况下不同：新 run 的 <code>before_agent_start</code> 扩展增加了消息或修改系统提示；两次 run 之间切换了模型或工具；空闲态 prompt 的预检查触发压缩；等待期间积累的 bash 或自定义消息被写入上下文。follow-up 的下一 turn 也会执行 turn 级上下文刷新和阈值压缩，所以不能简单理解为“follow-up 不压缩，新 run 才压缩”。</p><p>因此 follow-up 的核心价值是调度，而不是一种特殊推理模式：用户可以在 Agent 忙碌时预先声明下一件事，运行时保证它排在当前任务之后并自动继续。若你需要先观察结果再决定下一步，应该等待并发送新 run；若下一步与结果无关，可以提前排为 follow-up。</p></section><section class="prose-section" aria-labelledby="events"><h2 id="events">事件既用于观察，也可能形成等待边界</h2><p>Agent 的 processEvents 先更新内部状态，再按订阅顺序 await 每个 listener。监听者看到的是已更新的状态，监听 Promise 的完成也参与当前运行的完成。这可以让某些保存工作成为继续执行前的屏障。</p><p>低层 agentLoop 返回 EventStream，它推送事件而不等待外部异步迭代消费者处理完毕。两种 API 都产生事件，但等待语义不同。类比 Go：往一个队列发送任务，不等于等待接收者处理完；显式等待回调又是另一种契约。</p><p class="analysis">分析推断：可等待监听器有利于顺序一致性，但慢监听器会拖慢主流程，抛出异常还会影响结算。事件驱动不自动意味着彻底解耦，必须问清“生产者等待谁”。</p></section><section class="prose-section" aria-labelledby="cancel"><h2 id="cancel">取消是协作协议，不是事务回滚</h2><p>Agent.abort 调用 AbortController.abort。信号继续传到模型调用、工具与钩子；这些实现必须配合检查或取消 I/O。它不是操作系统强杀线程，也不会撤销已经写入的文件。</p><p>比如文件写入已经交给底层系统，用户此刻取消，写入仍可能完成。file-mutation-queue 的测试专门覆盖“取消后的写入尚未结束时，后续写入不能抢先进入”。因此取消、I/O 完成和锁释放是三个不同时间点。</p><p>Go 的 context cancellation 是更接近的类比；Rust 的 drop future 不能直接当成相同语义，因为 JS Promise 本身不会因你不再等待就自动取消底层工作。</p></section><section class="prose-section" aria-labelledby="errors"><h2 id="errors">区分工具失败和模型失败</h2><table><thead><tr><th>情形</th><th>低层行为</th><th>设计意义</th></tr></thead><tbody><tr><td>工具不存在、参数不合法、执行抛错</td><td>生成 isError 工具结果，通常允许模型继续</td><td>把可解释的环境反馈带回决策者</td></tr><tr><td>模型 stopReason 为 error / aborted</td><td>结束 turn 和当前 loop</td><td>没有可靠响应时停止推进</td></tr><tr><td>响应达到 length 且含工具调用</td><td>整批调用记为失败，不实际执行</td><td>避免执行看似可解析、实际不完整的参数</td></tr><tr><td>工具批次全部 terminate</td><td>不因该批工具自动续轮；队列仍可要求继续</td><td>批次终止提示与队列策略分开</td></tr></tbody></table><p>工具错误不保证模型能恢复；模型可能继续重复失败。基础循环本身没有固定的最大轮数守卫。宿主可以用停止钩子建立预算或策略，不能将没有内置限制误读为“必然收敛”。</p></section><section class="prose-section" aria-labelledby="style"><h2 id="style">设计风格：显式顺序优于隐藏魔法</h2><p class="analysis">分析推断：runLoop 用普通 while、条件分支与 await 表达顺序，读者能直接找到“何时注入输入”“何时退出”。与通用工作流图引擎相比，它更容易跟踪；当生命周期选项逐渐变多，嵌套分支也会增加理解成本。</p><p>值得借鉴的是明确边界与不变量，而不是照搬两层循环的语法。需要持久化恢复时，内存循环并不足够，必须额外记录已接受工作与外部效果；这正是进阶模块需要解决的问题。</p></section><section class="prose-section self-check" aria-labelledby="self-check"><h2 id="self-check">本章自测</h2><p>先尝试独立回答，再展开参考答案。</p><ol class="question-list"><li>steering、follow-up 和 abort 分别表达什么控制意图？</li><li>follow-up 与等待结束后启动新 run 的边界差别是什么？</li><li>为什么 abort 返回或信号触发后，不能断言文件没有变化？</li><li>为什么同样叫事件，Agent listener 和低层 EventStream 的等待语义不同？</li><li>工具失败与模型失败为什么采用不同默认处理？</li></ol><details class="reference-answer"><summary>查看参考答案</summary><ol><li><strong>steering、follow-up 和 abort 分别表达什么控制意图？</strong> steering 在当前 turn 结束后改变下一 turn；follow-up 在当前工作原本要结束时追加工作；abort 发出协作式取消信号，要求模型、工具和钩子停止正在进行的工作。</li><li><strong>follow-up 与等待结束后启动新 run 的边界差别是什么？</strong> follow-up 继续当前 active run，不先发送 agent_end，并沿用取消信号和运行边界；新 run 要等旧 run 完全结算，再创建新的 active run 并发送新的 agent_start。两者最终给模型的消息可能等价。</li><li><strong>为什么 abort 返回或信号触发后，不能断言文件没有变化？</strong> AbortSignal 是协作通知，不是事务回滚。底层 I/O 可能已经提交或仍在完成；只有具体操作的结算结果才能说明副作用状态。</li><li><strong>为什么同样叫事件，Agent listener 和低层 EventStream 的等待语义不同？</strong> Agent.processEvents 按序 await listener，因此监听器属于运行结算边界；EventStream.push 只把事件交给队列，不等待异步迭代消费者处理完成。</li><li><strong>工具失败与模型失败为什么采用不同默认处理？</strong> 工具错误可以变成 isError toolResult 返回模型，让模型调整方案；模型 error/aborted 意味着没有可靠 assistant 响应，循环停止推进。</li></ol></details></section><section><h2 id="evidence">源码证据</h2><p class="muted">摘录来自本地代码快照。点开可核对原文和完整文件；项目文档与分析推断在正文单独标注。</p><details class="evidence"><summary>AgentSession 明确记录 steering 与 follow-up 的交付时机。</summary><p class="source-path">packages/coding-agent/src/core/agent-session.ts · L1498</p><pre><code>1498  	async steer(text: string, images?: ImageContent[], options?: { source?: InputSource }): Promise&lt;void&gt; {
+1499  		await this._queueUserInput(text, images, &quot;steer&quot;, options?.source ?? &quot;interactive&quot;);
+1500  	}
+1501  
+1502  	/**
+1503  	 * Queue a follow-up message to be processed after the agent finishes.
+1504  	 * Delivered only when agent has no more tool calls or steering messages.
+1505  	 * Expands skill commands and prompt templates. Errors on extension commands.
+1506  	 * @param images Optional image attachments to include with the message
+1507  	 * @param options Input source; defaults to interactive
+1508  	 * @throws Error if text is an extension command
+1509  	 */
+1510  	async followUp(text: string, images?: ImageContent[], options?: { source?: InputSource }): Promise&lt;void&gt; {
+1511  		await this._queueUserInput(text, images, &quot;followUp&quot;, options?.source ?? &quot;interactive&quot;);
+1512  	}
+1513  
+1514  	/**
+1515  	 * Internal: Queue a steering message (already expanded, no extension command check).
+1516  	 */
+1517  	private async _queueSteer(text: string, images?: ImageContent[]): Promise&lt;void&gt; {
+1518  		this._steeringMessages.push(text);
+1519  		this._emitQueueUpdate();
+1520  		const content: (TextContent | ImageContent)[] = [{ type: &quot;text&quot;, text }];
+1521  		if (images) {</code></pre><a href="sources/packages--coding-agent--src--core--agent-session.ts.html#L1498">查看本地源码快照与行号</a></details><details class="evidence"><summary>两层循环对应不同的继续条件。</summary><p class="source-path">packages/agent/src/agent-loop.ts · L176</p><pre><code> 176  	// Outer loop: continues when queued follow-up messages arrive after agent would stop
+ 177  	while (true) {
+ 178  		let hasMoreToolCalls = true;
+ 179  
+ 180  		// Inner loop: process tool calls and steering messages
+ 181  		while (hasMoreToolCalls || pendingMessages.length &gt; 0) {
+ 182  			let preparedMessages: AgentMessage[] = [];
+ 183  			if (lastCompletedTurn) {
+ 184  				const nextTurnSnapshot = await config.prepareNextTurn?.(lastCompletedTurn);
+ 185  				if (nextTurnSnapshot) {
+ 186  					currentContext = nextTurnSnapshot.context ?? currentContext;
+ 187  					preparedMessages = nextTurnSnapshot.messages ?? [];</code></pre><a href="sources/packages--agent--src--agent-loop.ts.html#L176">查看本地源码快照与行号</a></details><details class="evidence"><summary>follow-up 只在原本会停止的位置消费。</summary><p class="source-path">packages/agent/src/agent-loop.ts · L266</p><pre><code> 266  		// Agent would stop here. Check for follow-up messages.
+ 267  		const followUpMessages = (await config.getFollowUpMessages?.()) || [];
+ 268  		if (followUpMessages.length &gt; 0) {
+ 269  			// Set as pending so inner loop processes them
+ 270  			pendingMessages = followUpMessages;
+ 271  			continue;
+ 272  		}
+ 273  
+ 274  		// No more messages, exit
+ 275  		break;
+ 276  	}
+ 277  
+ 278  	await emit({ type: &quot;agent_end&quot;, messages: newMessages });</code></pre><a href="sources/packages--agent--src--agent-loop.ts.html#L266">查看本地源码快照与行号</a></details><details class="evidence"><summary>类级订阅者按序等待。</summary><p class="source-path">packages/agent/src/agent.ts · L603</p><pre><code> 603  		for (const listener of this.listeners) {
+ 604  			await listener(event, signal);
+ 605  		}
+ 606  	}</code></pre><a href="sources/packages--agent--src--agent.ts.html#L603">查看本地源码快照与行号</a></details><details class="evidence"><summary>低层事件流的 push 不等待消费者。</summary><p class="source-path">packages/ai/src/utils/event-stream.ts · L43</p><pre><code>  43  	push(event: T): void {
+  44  		if (this.done) return;
+  45  
+  46  		if (this.isComplete(event)) {
+  47  			this.done = true;
+  48  			this.resolveFinalResult(this.extractResult(event));
+  49  		}
+  50  
+  51  		// Deliver to waiting consumer or queue it
+  52  		const waiter = this.waiting.dequeue();
+  53  		if (waiter) {
+  54  			waiter({ value: event, done: false });
+  55  		} else {
+  56  			this.queue.enqueue(event);
+  57  		}
+  58  	}
+  59  </code></pre><a href="sources/packages--ai--src--utils--event-stream.ts.html#L43">查看本地源码快照与行号</a></details><details class="evidence"><summary>已有测试覆盖取消与未完成写入之间的边界；本书不声称已执行该测试。</summary><p class="source-path">packages/coding-agent/test/file-mutation-queue.test.ts · L176</p><pre><code> 176  	it(&quot;keeps write queue locked while an aborted write is still in flight&quot;, async () =&gt; {
+ 177  		const dir = await createTempDir();
+ 178  		const filePath = join(dir, &quot;abort-write.txt&quot;);
+ 179  		const firstWriteStarted = createDeferred();
+ 180  		const finishFirstWrite = createDeferred();
+ 181  		const secondWriteStarted = createDeferred();
+ 182  		let firstWriteSettled = false;
+ 183  
+ 184  		const writeTool = createWriteTool(dir, {
+ 185  			operations: {
+ 186  				mkdir: async () =&gt; {},
+ 187  				writeFile: async (path, content) =&gt; {
+ 188  					if (content === &quot;first\n&quot;) {
+ 189  						firstWriteStarted.resolve();</code></pre><a href="sources/packages--coding-agent--test--file-mutation-queue.test.ts.html#L176">查看本地源码快照与行号</a></details></section><nav class="chapter-pager" aria-label="上下章"><a href="journey.html">上一页<br><strong>一次请求，究竟经过了什么</strong></a><a href="models.html">下一页<br><strong>统一模型接口，但保留差异</strong></a></nav><footer class="page-footer">Pi 设计读本 · 本地源码研究<br>代码基线 <code>36b60d2e8985</code> · 2026-09-23<br><a href="evidence.html">证据规则与分析边界</a></footer></main><aside class="page-toc" aria-label="本页目录"><span>本页内容</span><a href="#design-lens">本章重点</a><a href="#loops">两层循环表达两种继续</a><a href="#operations">在 Pi 界面中如何触发</a><a href="#events">事件既用于观察，也可能形成等待边界</a><a href="#cancel">取消是协作协议，不是事务回滚</a><a href="#errors">区分工具失败和模型失败</a><a href="#style">设计风格：显式顺序优于隐藏魔法</a><a href="#self-check">本章自测</a><a href="#evidence">源码证据</a><a href="#main">回到顶部</a></aside></div><noscript><p class="noscript-note">JavaScript 已关闭：正文、源码、图表和章节导航仍可阅读；全文搜索需要 JavaScript。</p></noscript></body></html>

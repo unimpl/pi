@@ -1,0 +1,12 @@
+flowchart TD
+A[工具调用] --> B[查找与参数准备]
+B --> C[参数校验]
+C --> D{beforeToolCall}
+D -->|允许| E[execute]
+D -->|拦截| X[错误结果]
+B -->|未知工具| X
+C -->|非法参数| X
+E --> F[afterToolCall]
+F --> G[结果结算]
+X --> G
+G --> H[下一轮模型上下文]

@@ -1,0 +1,274 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>packages/coding-agent/test/file-mutation-queue.test.ts · 源码快照</title><link rel="stylesheet" href="../assets/book.css"></head><body class="source-page"><header><a href="../evidence.html">返回证据索引</a><h1>packages/coding-agent/test/file-mutation-queue.test.ts</h1><p>本地快照 · 36b60d2e8985 · 2026-09-23</p></header><pre class="source-code"><code><span id="L1"><a href="#L1" aria-label="第 1 行">   1</a> import { access, mkdtemp, readFile, rm, symlink, writeFile } from &quot;node:fs/promises&quot;;</span>
+<span id="L2"><a href="#L2" aria-label="第 2 行">   2</a> import { tmpdir } from &quot;node:os&quot;;</span>
+<span id="L3"><a href="#L3" aria-label="第 3 行">   3</a> import { join } from &quot;node:path&quot;;</span>
+<span id="L4"><a href="#L4" aria-label="第 4 行">   4</a> import { afterEach, describe, expect, it } from &quot;vitest&quot;;</span>
+<span id="L5"><a href="#L5" aria-label="第 5 行">   5</a> import { createEditTool } from &quot;../src/core/tools/edit.ts&quot;;</span>
+<span id="L6"><a href="#L6" aria-label="第 6 行">   6</a> import { withFileMutationQueue } from &quot;../src/core/tools/file-mutation-queue.ts&quot;;</span>
+<span id="L7"><a href="#L7" aria-label="第 7 行">   7</a> import { createWriteTool } from &quot;../src/core/tools/write.ts&quot;;</span>
+<span id="L8"><a href="#L8" aria-label="第 8 行">   8</a> </span>
+<span id="L9"><a href="#L9" aria-label="第 9 行">   9</a> function delay(ms: number): Promise&lt;void&gt; {</span>
+<span id="L10"><a href="#L10" aria-label="第 10 行">  10</a> 	return new Promise((resolve) =&gt; setTimeout(resolve, ms));</span>
+<span id="L11"><a href="#L11" aria-label="第 11 行">  11</a> }</span>
+<span id="L12"><a href="#L12" aria-label="第 12 行">  12</a> </span>
+<span id="L13"><a href="#L13" aria-label="第 13 行">  13</a> function createDeferred(): { promise: Promise&lt;void&gt;; resolve: () =&gt; void } {</span>
+<span id="L14"><a href="#L14" aria-label="第 14 行">  14</a> 	let resolve!: () =&gt; void;</span>
+<span id="L15"><a href="#L15" aria-label="第 15 行">  15</a> 	const promise = new Promise&lt;void&gt;((promiseResolve) =&gt; {</span>
+<span id="L16"><a href="#L16" aria-label="第 16 行">  16</a> 		resolve = promiseResolve;</span>
+<span id="L17"><a href="#L17" aria-label="第 17 行">  17</a> 	});</span>
+<span id="L18"><a href="#L18" aria-label="第 18 行">  18</a> 	return { promise, resolve };</span>
+<span id="L19"><a href="#L19" aria-label="第 19 行">  19</a> }</span>
+<span id="L20"><a href="#L20" aria-label="第 20 行">  20</a> </span>
+<span id="L21"><a href="#L21" aria-label="第 21 行">  21</a> async function resolvesWithin(promise: Promise&lt;unknown&gt;, ms: number): Promise&lt;boolean&gt; {</span>
+<span id="L22"><a href="#L22" aria-label="第 22 行">  22</a> 	return Promise.race([promise.then(() =&gt; true), delay(ms).then(() =&gt; false)]);</span>
+<span id="L23"><a href="#L23" aria-label="第 23 行">  23</a> }</span>
+<span id="L24"><a href="#L24" aria-label="第 24 行">  24</a> </span>
+<span id="L25"><a href="#L25" aria-label="第 25 行">  25</a> const tempDirs: string[] = [];</span>
+<span id="L26"><a href="#L26" aria-label="第 26 行">  26</a> </span>
+<span id="L27"><a href="#L27" aria-label="第 27 行">  27</a> async function createTempDir(): Promise&lt;string&gt; {</span>
+<span id="L28"><a href="#L28" aria-label="第 28 行">  28</a> 	const dir = await mkdtemp(join(tmpdir(), &quot;pi-file-mutation-queue-&quot;));</span>
+<span id="L29"><a href="#L29" aria-label="第 29 行">  29</a> 	tempDirs.push(dir);</span>
+<span id="L30"><a href="#L30" aria-label="第 30 行">  30</a> 	return dir;</span>
+<span id="L31"><a href="#L31" aria-label="第 31 行">  31</a> }</span>
+<span id="L32"><a href="#L32" aria-label="第 32 行">  32</a> </span>
+<span id="L33"><a href="#L33" aria-label="第 33 行">  33</a> afterEach(async () =&gt; {</span>
+<span id="L34"><a href="#L34" aria-label="第 34 行">  34</a> 	await Promise.all(tempDirs.splice(0, tempDirs.length).map((dir) =&gt; rm(dir, { recursive: true, force: true })));</span>
+<span id="L35"><a href="#L35" aria-label="第 35 行">  35</a> });</span>
+<span id="L36"><a href="#L36" aria-label="第 36 行">  36</a> </span>
+<span id="L37"><a href="#L37" aria-label="第 37 行">  37</a> describe(&quot;withFileMutationQueue&quot;, () =&gt; {</span>
+<span id="L38"><a href="#L38" aria-label="第 38 行">  38</a> 	it(&quot;serializes operations for the same file&quot;, async () =&gt; {</span>
+<span id="L39"><a href="#L39" aria-label="第 39 行">  39</a> 		const order: string[] = [];</span>
+<span id="L40"><a href="#L40" aria-label="第 40 行">  40</a> 		const path = &quot;/tmp/file-mutation-queue-same&quot;;</span>
+<span id="L41"><a href="#L41" aria-label="第 41 行">  41</a> </span>
+<span id="L42"><a href="#L42" aria-label="第 42 行">  42</a> 		const first = withFileMutationQueue(path, async () =&gt; {</span>
+<span id="L43"><a href="#L43" aria-label="第 43 行">  43</a> 			order.push(&quot;first:start&quot;);</span>
+<span id="L44"><a href="#L44" aria-label="第 44 行">  44</a> 			await delay(30);</span>
+<span id="L45"><a href="#L45" aria-label="第 45 行">  45</a> 			order.push(&quot;first:end&quot;);</span>
+<span id="L46"><a href="#L46" aria-label="第 46 行">  46</a> 		});</span>
+<span id="L47"><a href="#L47" aria-label="第 47 行">  47</a> 		const second = withFileMutationQueue(path, async () =&gt; {</span>
+<span id="L48"><a href="#L48" aria-label="第 48 行">  48</a> 			order.push(&quot;second:start&quot;);</span>
+<span id="L49"><a href="#L49" aria-label="第 49 行">  49</a> 			order.push(&quot;second:end&quot;);</span>
+<span id="L50"><a href="#L50" aria-label="第 50 行">  50</a> 		});</span>
+<span id="L51"><a href="#L51" aria-label="第 51 行">  51</a> </span>
+<span id="L52"><a href="#L52" aria-label="第 52 行">  52</a> 		await Promise.all([first, second]);</span>
+<span id="L53"><a href="#L53" aria-label="第 53 行">  53</a> 		expect(order).toEqual([&quot;first:start&quot;, &quot;first:end&quot;, &quot;second:start&quot;, &quot;second:end&quot;]);</span>
+<span id="L54"><a href="#L54" aria-label="第 54 行">  54</a> 	});</span>
+<span id="L55"><a href="#L55" aria-label="第 55 行">  55</a> </span>
+<span id="L56"><a href="#L56" aria-label="第 56 行">  56</a> 	it(&quot;allows different files to proceed in parallel&quot;, async () =&gt; {</span>
+<span id="L57"><a href="#L57" aria-label="第 57 行">  57</a> 		const order: string[] = [];</span>
+<span id="L58"><a href="#L58" aria-label="第 58 行">  58</a> </span>
+<span id="L59"><a href="#L59" aria-label="第 59 行">  59</a> 		await Promise.all([</span>
+<span id="L60"><a href="#L60" aria-label="第 60 行">  60</a> 			withFileMutationQueue(&quot;/tmp/file-mutation-queue-a&quot;, async () =&gt; {</span>
+<span id="L61"><a href="#L61" aria-label="第 61 行">  61</a> 				order.push(&quot;a:start&quot;);</span>
+<span id="L62"><a href="#L62" aria-label="第 62 行">  62</a> 				await delay(30);</span>
+<span id="L63"><a href="#L63" aria-label="第 63 行">  63</a> 				order.push(&quot;a:end&quot;);</span>
+<span id="L64"><a href="#L64" aria-label="第 64 行">  64</a> 			}),</span>
+<span id="L65"><a href="#L65" aria-label="第 65 行">  65</a> 			withFileMutationQueue(&quot;/tmp/file-mutation-queue-b&quot;, async () =&gt; {</span>
+<span id="L66"><a href="#L66" aria-label="第 66 行">  66</a> 				order.push(&quot;b:start&quot;);</span>
+<span id="L67"><a href="#L67" aria-label="第 67 行">  67</a> 				await delay(30);</span>
+<span id="L68"><a href="#L68" aria-label="第 68 行">  68</a> 				order.push(&quot;b:end&quot;);</span>
+<span id="L69"><a href="#L69" aria-label="第 69 行">  69</a> 			}),</span>
+<span id="L70"><a href="#L70" aria-label="第 70 行">  70</a> 		]);</span>
+<span id="L71"><a href="#L71" aria-label="第 71 行">  71</a> </span>
+<span id="L72"><a href="#L72" aria-label="第 72 行">  72</a> 		expect(order.indexOf(&quot;a:start&quot;)).toBeLessThan(order.indexOf(&quot;a:end&quot;));</span>
+<span id="L73"><a href="#L73" aria-label="第 73 行">  73</a> 		expect(order.indexOf(&quot;b:start&quot;)).toBeLessThan(order.indexOf(&quot;b:end&quot;));</span>
+<span id="L74"><a href="#L74" aria-label="第 74 行">  74</a> 		expect(order.indexOf(&quot;b:start&quot;)).toBeLessThan(order.indexOf(&quot;a:end&quot;));</span>
+<span id="L75"><a href="#L75" aria-label="第 75 行">  75</a> 	});</span>
+<span id="L76"><a href="#L76" aria-label="第 76 行">  76</a> </span>
+<span id="L77"><a href="#L77" aria-label="第 77 行">  77</a> 	it(&quot;uses the same queue for symlink aliases&quot;, async () =&gt; {</span>
+<span id="L78"><a href="#L78" aria-label="第 78 行">  78</a> 		const dir = await createTempDir();</span>
+<span id="L79"><a href="#L79" aria-label="第 79 行">  79</a> 		const targetPath = join(dir, &quot;target.txt&quot;);</span>
+<span id="L80"><a href="#L80" aria-label="第 80 行">  80</a> 		const symlinkPath = join(dir, &quot;alias.txt&quot;);</span>
+<span id="L81"><a href="#L81" aria-label="第 81 行">  81</a> 		await writeFile(targetPath, &quot;hello\n&quot;, &quot;utf8&quot;);</span>
+<span id="L82"><a href="#L82" aria-label="第 82 行">  82</a> 		await symlink(targetPath, symlinkPath);</span>
+<span id="L83"><a href="#L83" aria-label="第 83 行">  83</a> </span>
+<span id="L84"><a href="#L84" aria-label="第 84 行">  84</a> 		const order: string[] = [];</span>
+<span id="L85"><a href="#L85" aria-label="第 85 行">  85</a> 		await Promise.all([</span>
+<span id="L86"><a href="#L86" aria-label="第 86 行">  86</a> 			withFileMutationQueue(targetPath, async () =&gt; {</span>
+<span id="L87"><a href="#L87" aria-label="第 87 行">  87</a> 				order.push(&quot;target:start&quot;);</span>
+<span id="L88"><a href="#L88" aria-label="第 88 行">  88</a> 				await delay(30);</span>
+<span id="L89"><a href="#L89" aria-label="第 89 行">  89</a> 				order.push(&quot;target:end&quot;);</span>
+<span id="L90"><a href="#L90" aria-label="第 90 行">  90</a> 			}),</span>
+<span id="L91"><a href="#L91" aria-label="第 91 行">  91</a> 			withFileMutationQueue(symlinkPath, async () =&gt; {</span>
+<span id="L92"><a href="#L92" aria-label="第 92 行">  92</a> 				order.push(&quot;alias:start&quot;);</span>
+<span id="L93"><a href="#L93" aria-label="第 93 行">  93</a> 				order.push(&quot;alias:end&quot;);</span>
+<span id="L94"><a href="#L94" aria-label="第 94 行">  94</a> 			}),</span>
+<span id="L95"><a href="#L95" aria-label="第 95 行">  95</a> 		]);</span>
+<span id="L96"><a href="#L96" aria-label="第 96 行">  96</a> </span>
+<span id="L97"><a href="#L97" aria-label="第 97 行">  97</a> 		expect(order).toEqual([&quot;target:start&quot;, &quot;target:end&quot;, &quot;alias:start&quot;, &quot;alias:end&quot;]);</span>
+<span id="L98"><a href="#L98" aria-label="第 98 行">  98</a> 	});</span>
+<span id="L99"><a href="#L99" aria-label="第 99 行">  99</a> });</span>
+<span id="L100"><a href="#L100" aria-label="第 100 行"> 100</a> </span>
+<span id="L101"><a href="#L101" aria-label="第 101 行"> 101</a> describe(&quot;built-in edit and write tools&quot;, () =&gt; {</span>
+<span id="L102"><a href="#L102" aria-label="第 102 行"> 102</a> 	it(&quot;preserves both parallel edits on the same file&quot;, async () =&gt; {</span>
+<span id="L103"><a href="#L103" aria-label="第 103 行"> 103</a> 		const dir = await createTempDir();</span>
+<span id="L104"><a href="#L104" aria-label="第 104 行"> 104</a> 		const filePath = join(dir, &quot;parallel-edit.txt&quot;);</span>
+<span id="L105"><a href="#L105" aria-label="第 105 行"> 105</a> 		await writeFile(filePath, &quot;alpha\nbeta\ngamma\n&quot;, &quot;utf8&quot;);</span>
+<span id="L106"><a href="#L106" aria-label="第 106 行"> 106</a> </span>
+<span id="L107"><a href="#L107" aria-label="第 107 行"> 107</a> 		const editTool = createEditTool(dir, {</span>
+<span id="L108"><a href="#L108" aria-label="第 108 行"> 108</a> 			operations: {</span>
+<span id="L109"><a href="#L109" aria-label="第 109 行"> 109</a> 				access,</span>
+<span id="L110"><a href="#L110" aria-label="第 110 行"> 110</a> 				readFile: async (path) =&gt; {</span>
+<span id="L111"><a href="#L111" aria-label="第 111 行"> 111</a> 					const buffer = await readFile(path);</span>
+<span id="L112"><a href="#L112" aria-label="第 112 行"> 112</a> 					await delay(30);</span>
+<span id="L113"><a href="#L113" aria-label="第 113 行"> 113</a> 					return buffer;</span>
+<span id="L114"><a href="#L114" aria-label="第 114 行"> 114</a> 				},</span>
+<span id="L115"><a href="#L115" aria-label="第 115 行"> 115</a> 				writeFile: async (path, content) =&gt; {</span>
+<span id="L116"><a href="#L116" aria-label="第 116 行"> 116</a> 					await delay(30);</span>
+<span id="L117"><a href="#L117" aria-label="第 117 行"> 117</a> 					await writeFile(path, content, &quot;utf8&quot;);</span>
+<span id="L118"><a href="#L118" aria-label="第 118 行"> 118</a> 				},</span>
+<span id="L119"><a href="#L119" aria-label="第 119 行"> 119</a> 			},</span>
+<span id="L120"><a href="#L120" aria-label="第 120 行"> 120</a> 		});</span>
+<span id="L121"><a href="#L121" aria-label="第 121 行"> 121</a> </span>
+<span id="L122"><a href="#L122" aria-label="第 122 行"> 122</a> 		await Promise.all([</span>
+<span id="L123"><a href="#L123" aria-label="第 123 行"> 123</a> 			editTool.execute(&quot;call-1&quot;, { path: filePath, edits: [{ oldText: &quot;alpha&quot;, newText: &quot;ALPHA&quot; }] }),</span>
+<span id="L124"><a href="#L124" aria-label="第 124 行"> 124</a> 			editTool.execute(&quot;call-2&quot;, { path: filePath, edits: [{ oldText: &quot;beta&quot;, newText: &quot;BETA&quot; }] }),</span>
+<span id="L125"><a href="#L125" aria-label="第 125 行"> 125</a> 		]);</span>
+<span id="L126"><a href="#L126" aria-label="第 126 行"> 126</a> </span>
+<span id="L127"><a href="#L127" aria-label="第 127 行"> 127</a> 		const content = await readFile(filePath, &quot;utf8&quot;);</span>
+<span id="L128"><a href="#L128" aria-label="第 128 行"> 128</a> 		expect(content).toBe(&quot;ALPHA\nBETA\ngamma\n&quot;);</span>
+<span id="L129"><a href="#L129" aria-label="第 129 行"> 129</a> 	});</span>
+<span id="L130"><a href="#L130" aria-label="第 130 行"> 130</a> </span>
+<span id="L131"><a href="#L131" aria-label="第 131 行"> 131</a> 	it(&quot;shares the queue between edit and write&quot;, async () =&gt; {</span>
+<span id="L132"><a href="#L132" aria-label="第 132 行"> 132</a> 		const dir = await createTempDir();</span>
+<span id="L133"><a href="#L133" aria-label="第 133 行"> 133</a> 		const filePath = join(dir, &quot;mixed.txt&quot;);</span>
+<span id="L134"><a href="#L134" aria-label="第 134 行"> 134</a> 		await writeFile(filePath, &quot;original\n&quot;, &quot;utf8&quot;);</span>
+<span id="L135"><a href="#L135" aria-label="第 135 行"> 135</a> </span>
+<span id="L136"><a href="#L136" aria-label="第 136 行"> 136</a> 		const editTool = createEditTool(dir, {</span>
+<span id="L137"><a href="#L137" aria-label="第 137 行"> 137</a> 			operations: {</span>
+<span id="L138"><a href="#L138" aria-label="第 138 行"> 138</a> 				access,</span>
+<span id="L139"><a href="#L139" aria-label="第 139 行"> 139</a> 				readFile: async (path) =&gt; {</span>
+<span id="L140"><a href="#L140" aria-label="第 140 行"> 140</a> 					const buffer = await readFile(path);</span>
+<span id="L141"><a href="#L141" aria-label="第 141 行"> 141</a> 					await delay(30);</span>
+<span id="L142"><a href="#L142" aria-label="第 142 行"> 142</a> 					return buffer;</span>
+<span id="L143"><a href="#L143" aria-label="第 143 行"> 143</a> 				},</span>
+<span id="L144"><a href="#L144" aria-label="第 144 行"> 144</a> 				writeFile: async (path, content) =&gt; {</span>
+<span id="L145"><a href="#L145" aria-label="第 145 行"> 145</a> 					await delay(30);</span>
+<span id="L146"><a href="#L146" aria-label="第 146 行"> 146</a> 					await writeFile(path, content, &quot;utf8&quot;);</span>
+<span id="L147"><a href="#L147" aria-label="第 147 行"> 147</a> 				},</span>
+<span id="L148"><a href="#L148" aria-label="第 148 行"> 148</a> 			},</span>
+<span id="L149"><a href="#L149" aria-label="第 149 行"> 149</a> 		});</span>
+<span id="L150"><a href="#L150" aria-label="第 150 行"> 150</a> 		const writeTool = createWriteTool(dir, {</span>
+<span id="L151"><a href="#L151" aria-label="第 151 行"> 151</a> 			operations: {</span>
+<span id="L152"><a href="#L152" aria-label="第 152 行"> 152</a> 				mkdir: async () =&gt; {},</span>
+<span id="L153"><a href="#L153" aria-label="第 153 行"> 153</a> 				writeFile: async (path, content) =&gt; {</span>
+<span id="L154"><a href="#L154" aria-label="第 154 行"> 154</a> 					await delay(10);</span>
+<span id="L155"><a href="#L155" aria-label="第 155 行"> 155</a> 					await writeFile(path, content, &quot;utf8&quot;);</span>
+<span id="L156"><a href="#L156" aria-label="第 156 行"> 156</a> 				},</span>
+<span id="L157"><a href="#L157" aria-label="第 157 行"> 157</a> 			},</span>
+<span id="L158"><a href="#L158" aria-label="第 158 行"> 158</a> 		});</span>
+<span id="L159"><a href="#L159" aria-label="第 159 行"> 159</a> </span>
+<span id="L160"><a href="#L160" aria-label="第 160 行"> 160</a> 		const editPromise = editTool.execute(&quot;call-1&quot;, {</span>
+<span id="L161"><a href="#L161" aria-label="第 161 行"> 161</a> 			path: filePath,</span>
+<span id="L162"><a href="#L162" aria-label="第 162 行"> 162</a> 			edits: [{ oldText: &quot;original&quot;, newText: &quot;edited&quot; }],</span>
+<span id="L163"><a href="#L163" aria-label="第 163 行"> 163</a> 		});</span>
+<span id="L164"><a href="#L164" aria-label="第 164 行"> 164</a> 		await delay(5);</span>
+<span id="L165"><a href="#L165" aria-label="第 165 行"> 165</a> 		const writePromise = writeTool.execute(&quot;call-2&quot;, {</span>
+<span id="L166"><a href="#L166" aria-label="第 166 行"> 166</a> 			path: filePath,</span>
+<span id="L167"><a href="#L167" aria-label="第 167 行"> 167</a> 			content: &quot;replacement\n&quot;,</span>
+<span id="L168"><a href="#L168" aria-label="第 168 行"> 168</a> 		});</span>
+<span id="L169"><a href="#L169" aria-label="第 169 行"> 169</a> </span>
+<span id="L170"><a href="#L170" aria-label="第 170 行"> 170</a> 		await Promise.all([editPromise, writePromise]);</span>
+<span id="L171"><a href="#L171" aria-label="第 171 行"> 171</a> </span>
+<span id="L172"><a href="#L172" aria-label="第 172 行"> 172</a> 		const content = await readFile(filePath, &quot;utf8&quot;);</span>
+<span id="L173"><a href="#L173" aria-label="第 173 行"> 173</a> 		expect(content).toBe(&quot;replacement\n&quot;);</span>
+<span id="L174"><a href="#L174" aria-label="第 174 行"> 174</a> 	});</span>
+<span id="L175"><a href="#L175" aria-label="第 175 行"> 175</a> </span>
+<span id="L176"><a href="#L176" aria-label="第 176 行"> 176</a> 	it(&quot;keeps write queue locked while an aborted write is still in flight&quot;, async () =&gt; {</span>
+<span id="L177"><a href="#L177" aria-label="第 177 行"> 177</a> 		const dir = await createTempDir();</span>
+<span id="L178"><a href="#L178" aria-label="第 178 行"> 178</a> 		const filePath = join(dir, &quot;abort-write.txt&quot;);</span>
+<span id="L179"><a href="#L179" aria-label="第 179 行"> 179</a> 		const firstWriteStarted = createDeferred();</span>
+<span id="L180"><a href="#L180" aria-label="第 180 行"> 180</a> 		const finishFirstWrite = createDeferred();</span>
+<span id="L181"><a href="#L181" aria-label="第 181 行"> 181</a> 		const secondWriteStarted = createDeferred();</span>
+<span id="L182"><a href="#L182" aria-label="第 182 行"> 182</a> 		let firstWriteSettled = false;</span>
+<span id="L183"><a href="#L183" aria-label="第 183 行"> 183</a> </span>
+<span id="L184"><a href="#L184" aria-label="第 184 行"> 184</a> 		const writeTool = createWriteTool(dir, {</span>
+<span id="L185"><a href="#L185" aria-label="第 185 行"> 185</a> 			operations: {</span>
+<span id="L186"><a href="#L186" aria-label="第 186 行"> 186</a> 				mkdir: async () =&gt; {},</span>
+<span id="L187"><a href="#L187" aria-label="第 187 行"> 187</a> 				writeFile: async (path, content) =&gt; {</span>
+<span id="L188"><a href="#L188" aria-label="第 188 行"> 188</a> 					if (content === &quot;first\n&quot;) {</span>
+<span id="L189"><a href="#L189" aria-label="第 189 行"> 189</a> 						firstWriteStarted.resolve();</span>
+<span id="L190"><a href="#L190" aria-label="第 190 行"> 190</a> 						await finishFirstWrite.promise;</span>
+<span id="L191"><a href="#L191" aria-label="第 191 行"> 191</a> 						await writeFile(path, content, &quot;utf8&quot;);</span>
+<span id="L192"><a href="#L192" aria-label="第 192 行"> 192</a> 						firstWriteSettled = true;</span>
+<span id="L193"><a href="#L193" aria-label="第 193 行"> 193</a> 						return;</span>
+<span id="L194"><a href="#L194" aria-label="第 194 行"> 194</a> 					}</span>
+<span id="L195"><a href="#L195" aria-label="第 195 行"> 195</a> </span>
+<span id="L196"><a href="#L196" aria-label="第 196 行"> 196</a> 					if (content === &quot;second\n&quot;) {</span>
+<span id="L197"><a href="#L197" aria-label="第 197 行"> 197</a> 						expect(firstWriteSettled).toBe(true);</span>
+<span id="L198"><a href="#L198" aria-label="第 198 行"> 198</a> 						secondWriteStarted.resolve();</span>
+<span id="L199"><a href="#L199" aria-label="第 199 行"> 199</a> 					}</span>
+<span id="L200"><a href="#L200" aria-label="第 200 行"> 200</a> 					await writeFile(path, content, &quot;utf8&quot;);</span>
+<span id="L201"><a href="#L201" aria-label="第 201 行"> 201</a> 				},</span>
+<span id="L202"><a href="#L202" aria-label="第 202 行"> 202</a> 			},</span>
+<span id="L203"><a href="#L203" aria-label="第 203 行"> 203</a> 		});</span>
+<span id="L204"><a href="#L204" aria-label="第 204 行"> 204</a> </span>
+<span id="L205"><a href="#L205" aria-label="第 205 行"> 205</a> 		const controller = new AbortController();</span>
+<span id="L206"><a href="#L206" aria-label="第 206 行"> 206</a> 		const firstWrite = writeTool.execute(&quot;call-1&quot;, { path: filePath, content: &quot;first\n&quot; }, controller.signal);</span>
+<span id="L207"><a href="#L207" aria-label="第 207 行"> 207</a> 		await firstWriteStarted.promise;</span>
+<span id="L208"><a href="#L208" aria-label="第 208 行"> 208</a> 		controller.abort();</span>
+<span id="L209"><a href="#L209" aria-label="第 209 行"> 209</a> </span>
+<span id="L210"><a href="#L210" aria-label="第 210 行"> 210</a> 		const secondWrite = writeTool.execute(&quot;call-2&quot;, { path: filePath, content: &quot;second\n&quot; });</span>
+<span id="L211"><a href="#L211" aria-label="第 211 行"> 211</a> 		expect(await resolvesWithin(secondWriteStarted.promise, 20)).toBe(false);</span>
+<span id="L212"><a href="#L212" aria-label="第 212 行"> 212</a> </span>
+<span id="L213"><a href="#L213" aria-label="第 213 行"> 213</a> 		finishFirstWrite.resolve();</span>
+<span id="L214"><a href="#L214" aria-label="第 214 行"> 214</a> 		await expect(firstWrite).rejects.toThrow(&quot;Operation aborted&quot;);</span>
+<span id="L215"><a href="#L215" aria-label="第 215 行"> 215</a> 		await secondWrite;</span>
+<span id="L216"><a href="#L216" aria-label="第 216 行"> 216</a> </span>
+<span id="L217"><a href="#L217" aria-label="第 217 行"> 217</a> 		const content = await readFile(filePath, &quot;utf8&quot;);</span>
+<span id="L218"><a href="#L218" aria-label="第 218 行"> 218</a> 		expect(content).toBe(&quot;second\n&quot;);</span>
+<span id="L219"><a href="#L219" aria-label="第 219 行"> 219</a> 	});</span>
+<span id="L220"><a href="#L220" aria-label="第 220 行"> 220</a> </span>
+<span id="L221"><a href="#L221" aria-label="第 221 行"> 221</a> 	it(&quot;keeps edit queue locked while an aborted edit write is still in flight&quot;, async () =&gt; {</span>
+<span id="L222"><a href="#L222" aria-label="第 222 行"> 222</a> 		const dir = await createTempDir();</span>
+<span id="L223"><a href="#L223" aria-label="第 223 行"> 223</a> 		const filePath = join(dir, &quot;abort-edit.txt&quot;);</span>
+<span id="L224"><a href="#L224" aria-label="第 224 行"> 224</a> 		await writeFile(filePath, &quot;alpha\nbeta\n&quot;, &quot;utf8&quot;);</span>
+<span id="L225"><a href="#L225" aria-label="第 225 行"> 225</a> 		const firstWriteStarted = createDeferred();</span>
+<span id="L226"><a href="#L226" aria-label="第 226 行"> 226</a> 		const finishFirstWrite = createDeferred();</span>
+<span id="L227"><a href="#L227" aria-label="第 227 行"> 227</a> 		const secondWriteStarted = createDeferred();</span>
+<span id="L228"><a href="#L228" aria-label="第 228 行"> 228</a> 		let firstWriteSettled = false;</span>
+<span id="L229"><a href="#L229" aria-label="第 229 行"> 229</a> </span>
+<span id="L230"><a href="#L230" aria-label="第 230 行"> 230</a> 		const editTool = createEditTool(dir, {</span>
+<span id="L231"><a href="#L231" aria-label="第 231 行"> 231</a> 			operations: {</span>
+<span id="L232"><a href="#L232" aria-label="第 232 行"> 232</a> 				access,</span>
+<span id="L233"><a href="#L233" aria-label="第 233 行"> 233</a> 				readFile,</span>
+<span id="L234"><a href="#L234" aria-label="第 234 行"> 234</a> 				writeFile: async (path, content) =&gt; {</span>
+<span id="L235"><a href="#L235" aria-label="第 235 行"> 235</a> 					if (content === &quot;ALPHA\nbeta\n&quot;) {</span>
+<span id="L236"><a href="#L236" aria-label="第 236 行"> 236</a> 						firstWriteStarted.resolve();</span>
+<span id="L237"><a href="#L237" aria-label="第 237 行"> 237</a> 						await finishFirstWrite.promise;</span>
+<span id="L238"><a href="#L238" aria-label="第 238 行"> 238</a> 						await writeFile(path, content, &quot;utf8&quot;);</span>
+<span id="L239"><a href="#L239" aria-label="第 239 行"> 239</a> 						firstWriteSettled = true;</span>
+<span id="L240"><a href="#L240" aria-label="第 240 行"> 240</a> 						return;</span>
+<span id="L241"><a href="#L241" aria-label="第 241 行"> 241</a> 					}</span>
+<span id="L242"><a href="#L242" aria-label="第 242 行"> 242</a> </span>
+<span id="L243"><a href="#L243" aria-label="第 243 行"> 243</a> 					if (content === &quot;ALPHA\nBETA\n&quot; || content === &quot;alpha\nBETA\n&quot;) {</span>
+<span id="L244"><a href="#L244" aria-label="第 244 行"> 244</a> 						expect(firstWriteSettled).toBe(true);</span>
+<span id="L245"><a href="#L245" aria-label="第 245 行"> 245</a> 						secondWriteStarted.resolve();</span>
+<span id="L246"><a href="#L246" aria-label="第 246 行"> 246</a> 					}</span>
+<span id="L247"><a href="#L247" aria-label="第 247 行"> 247</a> 					await writeFile(path, content, &quot;utf8&quot;);</span>
+<span id="L248"><a href="#L248" aria-label="第 248 行"> 248</a> 				},</span>
+<span id="L249"><a href="#L249" aria-label="第 249 行"> 249</a> 			},</span>
+<span id="L250"><a href="#L250" aria-label="第 250 行"> 250</a> 		});</span>
+<span id="L251"><a href="#L251" aria-label="第 251 行"> 251</a> </span>
+<span id="L252"><a href="#L252" aria-label="第 252 行"> 252</a> 		const controller = new AbortController();</span>
+<span id="L253"><a href="#L253" aria-label="第 253 行"> 253</a> 		const firstEdit = editTool.execute(</span>
+<span id="L254"><a href="#L254" aria-label="第 254 行"> 254</a> 			&quot;call-1&quot;,</span>
+<span id="L255"><a href="#L255" aria-label="第 255 行"> 255</a> 			{ path: filePath, edits: [{ oldText: &quot;alpha&quot;, newText: &quot;ALPHA&quot; }] },</span>
+<span id="L256"><a href="#L256" aria-label="第 256 行"> 256</a> 			controller.signal,</span>
+<span id="L257"><a href="#L257" aria-label="第 257 行"> 257</a> 		);</span>
+<span id="L258"><a href="#L258" aria-label="第 258 行"> 258</a> 		await firstWriteStarted.promise;</span>
+<span id="L259"><a href="#L259" aria-label="第 259 行"> 259</a> 		controller.abort();</span>
+<span id="L260"><a href="#L260" aria-label="第 260 行"> 260</a> </span>
+<span id="L261"><a href="#L261" aria-label="第 261 行"> 261</a> 		const secondEdit = editTool.execute(&quot;call-2&quot;, {</span>
+<span id="L262"><a href="#L262" aria-label="第 262 行"> 262</a> 			path: filePath,</span>
+<span id="L263"><a href="#L263" aria-label="第 263 行"> 263</a> 			edits: [{ oldText: &quot;beta&quot;, newText: &quot;BETA&quot; }],</span>
+<span id="L264"><a href="#L264" aria-label="第 264 行"> 264</a> 		});</span>
+<span id="L265"><a href="#L265" aria-label="第 265 行"> 265</a> 		expect(await resolvesWithin(secondWriteStarted.promise, 20)).toBe(false);</span>
+<span id="L266"><a href="#L266" aria-label="第 266 行"> 266</a> </span>
+<span id="L267"><a href="#L267" aria-label="第 267 行"> 267</a> 		finishFirstWrite.resolve();</span>
+<span id="L268"><a href="#L268" aria-label="第 268 行"> 268</a> 		await expect(firstEdit).rejects.toThrow(&quot;Operation aborted&quot;);</span>
+<span id="L269"><a href="#L269" aria-label="第 269 行"> 269</a> 		await secondEdit;</span>
+<span id="L270"><a href="#L270" aria-label="第 270 行"> 270</a> </span>
+<span id="L271"><a href="#L271" aria-label="第 271 行"> 271</a> 		const content = await readFile(filePath, &quot;utf8&quot;);</span>
+<span id="L272"><a href="#L272" aria-label="第 272 行"> 272</a> 		expect(content).toBe(&quot;ALPHA\nBETA\n&quot;);</span>
+<span id="L273"><a href="#L273" aria-label="第 273 行"> 273</a> 	});</span>
+<span id="L274"><a href="#L274" aria-label="第 274 行"> 274</a> });</span></code></pre></body></html>

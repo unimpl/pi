@@ -1,0 +1,11 @@
+{
+  "name": "pi-study-book",
+  "private": true,
+  "type": "module",
+  "description": "Offline study book; optional build-time renderer only",
+  "scripts": {
+    "generate": "python3 generate.py && node render-diagrams.mjs",
+    "verify": "python3 verify.py"
+  },
+  "devDependencies": { "beautiful-mermaid": "1.1.3" }
+}

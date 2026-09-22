@@ -1,0 +1,8 @@
+flowchart TD
+P[展示端] --> C[pi-client]
+C --> R[pi-protocol 路由]
+R --> S[pi-server]
+S --> A[应用拥有的服务端点]
+A --> F[Chord 服务语义]
+F --> W[worker 内 Session 与 Harness]
+W --> D[存储实现]
