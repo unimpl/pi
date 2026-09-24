@@ -1,0 +1,133 @@
+<div class="chapter-meta">第 10 章 / 演进</div>
+<h1>从发版记录理解功能演进</h1>
+<p class="subtitle">把新增能力、接口迁移和实验方向放回时间线上。</p>
+<p class="lead">前九章解释一份源码快照如何工作。本章换一个问题：哪些实际需求，推动 Pi 从终端助手发展出会话树、扩展系统和可组合运行时？以下事实来自 GitHub Releases；每个版本链接都指向本书保存的原文，设计启示属于分析。</p>
+
+<section class="chapter-guide" aria-labelledby="design-lens">
+<div class="guide-heading"><h2 id="design-lens">本章先抓什么</h2><span>综合 · 先读主线，再查迁移</span></div>
+<dl><div><dt>为什么需要</dt><dd>只看最新源码，容易把后来为长期会话、扩展生态和远程接入增加的机制，当成第一天就必须实现的部分。</dd></div>
+<div><dt>行业常见做法</dt><dd>用版本说明记录新增能力和兼容性变化。本章进一步把版本按用户工作流、状态模型和接入边界归类；这是一种阅读方法，不是行业产品排名。</dd></div>
+<div><dt>自己实现时</dt><dd>先做模型调用、工具执行、持久会话和取消；遇到实际复用需求，再引入扩展、资源包、跨目录运行时和远程协议。</dd></div>
+<div><dt>现在可以忽略</dt><dd>不必记住每个模型编号、快捷键修复和 API 重命名；也不应把演示扩展或未完成的持久执行脚手架当作默认产品功能。</dd></div></dl>
+</section>
+
+<section class="prose-section" aria-labelledby="scope"><h2 id="scope">10.1 范围与筛选标准</h2>
+<p>{{coverage}}</p>
+<p>“所有”指抓取时 Releases API 可见的已发布记录，包括预发布标记；不等于所有 Git tag、npm 版本或每个包的完整 CHANGELOG。最早可见记录不是项目诞生时间，版本号中存在缺号，也存在较老版本晚发布的情况。原文保留发布时间、更新时间和发布状态，日期统一用 UTC。</p>
+<p>入选标准是至少改变以下一项：用户能完成的任务、会话与上下文的数据模型、工具执行与控制语义、SDK／扩展／RPC 的接入契约，或安装、信任与运行环境。补丁版本也可能入选。普通崩溃修复、样式调整、依赖升级和单纯模型目录更新通常不展开；改变安全边界或核心执行行为的修复仍会说明。</p>
+<p>多次出现在 “New Features” 和 “Added” 中的同一能力合并讲述。正文中的“启示”是基于这些变化的分析，不是维护者原话。已有九章的代码基线保持独立；本章不据发版说明自动改写它们的源码结论。</p>
+<p><a href="release-archive.html">查看全部发版原文与索引</a> · <a href="releases/releases.json">下载完整记录 JSON</a> · <a href="releases/manifest.json">查看抓取与哈希清单</a></p>
+</section>
+
+<section class="prose-section" aria-labelledby="timeline"><h2 id="timeline">10.2 先看八个阶段</h2>
+<table><thead><tr><th scope="col">阶段</th><th scope="col">关键版本</th><th scope="col">能力边界如何变化</th></tr></thead><tbody>
+<tr><td>可安装、可长聊</td><td>{{v0.12.0}}<br>{{v0.12.7}}</td><td>独立二进制降低安装门槛；上下文压缩支撑长会话。</td></tr>
+<tr><td>可复用、可嵌入</td><td>{{v0.19.0}}<br>{{v0.26.0}}</td><td>技能按需加载，自定义工具和 SDK 让能力离开固定 CLI。</td></tr>
+<tr><td>可分支、可干预</td><td>{{v0.31.0}}<br>{{v0.32.0}}</td><td>会话成为树；中途改方向与结束后追加任务分开。</td></tr>
+<tr><td>形成扩展生态</td><td>{{v0.35.0}}<br>{{v0.50.0}}</td><td>统一扩展契约，随后统一资源分发、发现、配置和重载。</td></tr>
+<tr><td>执行与生命周期收敛</td><td>{{v0.58.0}}<br>{{v0.65.0}}</td><td>并行执行保留顺序契约；切换会话重建目录绑定服务。</td></tr>
+<tr><td>建立信任与模型运行时</td><td>{{v0.79.0}}<br>{{v0.80.8}}</td><td>项目资源加载先过信任判断；凭证、动态目录和请求装配统一管理。</td></tr>
+<tr><td>本地模型、全屏与远程探索</td><td>{{v0.81.0}}<br>{{v0.84.0}}</td><td>加入本地模型管理；终端交互增强；远程与持久执行仍需区分成熟度。</td></tr>
+<tr><td>历史与请求上下文进一步分离</td><td>{{v0.86.0}}<br>{{v0.87.0}}</td><td>指令与工具变化进入 transcript；上下文编辑追加记录，生命周期边界可驱动后续请求。</td></tr>
+</tbody></table>
+</section>
+
+<section class="prose-section" aria-labelledby="early"><h2 id="early">10.3 从一次问答到可持续的工作会话</h2>
+<p><strong>问题：</strong>代码任务会产生大量文件内容和工具输出，单纯追加消息很快撞到模型上下文上限；部署端也不一定有完整 JavaScript 开发环境。</p>
+<p>{{v0.12.0}} 提供基于 Bun 的独立二进制，覆盖 macOS、Linux 和 Windows。{{v0.12.7}} 加入上下文压缩，在降低输入体积时保留近期对话；{{v0.13.2}} 统一工具输出截断和给模型的后续操作提示。{{v0.18.2}} 对限流、过载等暂时性错误加入可取消的指数退避重试。</p>
+<p><strong>具体轨迹：</strong>模型读取大文件 → 工具截断并提示如何继续读取 → 对话接近上限时压缩 → 请求遇到临时错误时重试。这些机制分别处理单次工具输出、累计历史和远端可用性，不能用一个“自动恢复”开关代替。</p>
+<p>{{v0.21.0}} 支持在兼容终端内显示图片；{{v0.33.0}} 支持从剪贴板粘贴图片并配置快捷键。它们扩大了终端工作流，但“终端能显示图片”与“所选模型支持图片输入”是两个条件。</p>
+<p><strong>启示：</strong>先把输入大小、错误恢复和会话持久化做成独立边界，再增加便利交互。对应阅读：<a href="journey.html">第三章请求流程</a>、<a href="context.html">第七章上下文</a>。</p>
+</section>
+
+<section class="prose-section" aria-labelledby="extensions"><h2 id="extensions">10.4 技能、工具、扩展与资源包逐步分工</h2>
+<p>{{v0.19.0}} 引入技能系统：系统提示先列出技能描述，需要时再由 read 读取说明。{{v0.20.0}} 将 Pi 技能统一为目录中的 <code>SKILL.md</code>；{{v0.24.0}} 进一步对齐 Agent Skills 格式。技能提供操作知识，并不等同于一个可直接执行的工具。</p>
+<p>{{v0.23.0}} 引入 TypeScript 自定义工具，提供工具渲染、用户交互和状态重建入口。{{v0.26.0}} 推出 <code>createAgentSession()</code> SDK 工厂，允许调用方控制模型、工具、技能、持久化和设置；省略配置时发现默认资源，显式传入时覆盖。</p>
+<p><strong>真正的合并发生在 {{v0.35.0}}：</strong>hooks 与 custom tools 统一为 extensions，共享发现路径、配置和 API。一个扩展可以同时注册模型工具、斜杠命令、快捷键、CLI 参数、事件处理器和消息渲染器。文件式斜杠命令同时改称 prompt templates，避免把文本模板和可执行扩展命令混为一谈。</p>
+<p><strong>例子：</strong>“项目评审”能力可以用技能描述流程，用工具读取专用服务，用命令提供显式入口，再用事件记录状态。统一扩展契约使这些部分能共享生命周期，无须维护两套插件加载机制。</p>
+<p>{{v0.43.0}} 增加 <code>/skill:name</code> 显式调用；{{v0.47.0}} 把技能展开移到 AgentSession，使 RPC、print 模式也能使用，并加入可转换或直接处理输入的 <code>input</code> 事件。</p>
+<p>{{v0.50.0}} 让扩展走向可分发资源包：<code>pi install/remove/update/list</code>、<code>pi config</code>、资源过滤、统一 ResourceLoader 和 <code>/reload</code>。包可以携带 extensions、skills、prompts、themes。{{v0.54.0}} 增加 <code>.agents/skills</code> 自动发现；{{v0.55.0}} 把同名资源优先级改为项目优先，注册冲突不再导致整个后加载扩展退出。</p>
+<p><strong>边界：</strong>{{v0.24.0}} 的多子代理编排、{{v0.45.0}} 的 OS 沙箱、{{v0.78.1}} 的 Gondolin 微型虚拟机接入，分别以示例交付。它们证明扩展接口可以承载这些方案，不表示默认安装自动启用多代理或执行隔离。对应阅读：<a href="tools.html">第六章工具</a>、<a href="principles.html#extension">第九章扩展责任</a>。</p>
+</section>
+
+<section class="prose-section" aria-labelledby="sessions"><h2 id="sessions">10.5 会话从线性消息升级为树，再分离运行时</h2>
+<p><strong>问题：</strong>尝试另一条解决路径时，截断原对话会丢失历史；只复制消息又难以表达分支关系和扩展状态。</p>
+<p>{{v0.31.0}} 是核心转折。会话条目具有 <code>id</code> 和 <code>parentId</code>，<code>/tree</code> 可以在同一文件内切换分支并保留历史；旧格式首次读取时从 v1 迁移到 v2。分支摘要、自定义状态、自定义消息与标签成为不同条目类型。压缩摘要也增加结构化内容和文件操作跟踪。</p>
+<p><strong>例子：</strong>在节点 A 后尝试方案 B，再回到 A 尝试 C。记录同时保留 B 和 C；发给模型的上下文沿当前分支构建，必要时携带离开分支的摘要。这解释了为何“磁盘上存在”不等于“下一次请求发送”。{{v0.43.0}} 把 <code>/branch</code> 改名为 <code>/fork</code>；{{v0.68.0}} 又增加 <code>/clone</code>，用来把当前活动分支复制到新会话。</p>
+<p>{{v0.61.0}} 加入 JSONL 导入导出。更深的变化在 {{v0.65.0}}：<code>AgentSessionRuntime</code> 负责新建、恢复、fork 和导入时的会话替换，并在跨工作目录切换时重建绑定目录的服务。原来放在 AgentSession 上的替换方法迁到 runtime，扩展改通过带 reason 的 <code>session_start</code> 观察新会话。</p>
+<p>{{v0.69.0}} 明确让替换前捕获的 session-bound 扩展对象失效；否则在 A 项目取得的工具和配置可能被错误带入 B 项目。{{v0.85.0}} 允许通过 <code>SessionManager.inMemory()</code> 恢复外部管理的条目，为宿主自行存储会话提供入口。</p>
+<p><strong>启示：</strong>会话树回答“历史如何组织”，runtime 回答“当前服务属于哪个会话和目录”。二者解决不同问题。对应阅读：<a href="foundations.html">第一章对象模型</a>、<a href="context.html">第七章历史与投影</a>。</p>
+</section>
+
+<section class="prose-section" aria-labelledby="execution"><h2 id="execution">10.6 控制权与并行执行成为明确契约</h2>
+<p>{{v0.25.0}} 允许用户排入新消息后打断剩余工具批次，用错误结果表示被跳过的调用。{{v0.32.0}} 进一步拆分 <code>steer()</code> 与 <code>followUp()</code>：前者在运行中调整方向，后者等当前运行结束再追加任务，RPC 和设置也同步拆分。</p>
+<p><strong>例子：</strong>“先别改文件，解释计划”是 steer；“做完后再写总结”是 follow-up。两者都表现为用户在模型忙碌时输入，但投递时机不同，单一队列无法准确表达意图。steer 也不意味着已经发生的文件修改会被撤销。</p>
+<p>{{v0.39.0}} 为内置工具引入可替换 operations，让 read、write、edit、bash 等操作可被导向 SSH 等执行后端。{{v0.58.0}} 将扩展工具默认并行执行，同时保留串行 <code>tool_call</code> 预检，并按模型原始调用顺序发出最终结果。预检有序、执行并发、结果有序，是三个分别定义的约束。</p>
+<p>{{v0.62.0}} 统一内置和自定义 ToolDefinition，并将资源来源收敛到 <code>sourceInfo</code>。{{v0.63.0}} 允许一次 edit 修改同文件多个不重叠区域，全部基于原文件匹配；{{v0.64.0}} 增加 schema 验证前的 <code>prepareArguments</code>，用于处理旧会话中的参数形态。{{v0.68.0}} 将 SDK 内置工具选择改为名称白名单，避免调用方传入绑定了旧 cwd 的实例。</p>
+<p>{{v0.69.0}} 的 <code>terminate: true</code> 允许工具结束当前批次而不自动再问一次模型；{{v0.84.1}} 将这一能力扩展到被拦截的工具调用。它与取消请求、停止整个进程不是同一概念。</p>
+<p>{{v0.86.0}} 修改 <code>user_bash</code> 的失败行为：处理器报错或返回无效结果时中止命令，不再继续其他处理器或回落到本地执行。<strong>启示：</strong>远程执行拦截失败后，本地执行不是安全的通用后备路径。对应阅读：<a href="control.html">第四章控制权</a>、<a href="tools.html">第六章副作用边界</a>。</p>
+</section>
+
+<section class="prose-section" aria-labelledby="models-evolution"><h2 id="models-evolution">10.7 模型接入从 provider 列表走向运行时</h2>
+<p>早期重要扩展包括 {{v0.22.0}} 的 GitHub Copilot、{{v0.32.0}} 的 Vertex AI、{{v0.36.0}} 的实验性 Codex OAuth、{{v0.45.0}} 的实验性 Bedrock，以及 {{v0.47.0}} 的 Codex 正式支持。这些记录中的认证方式和模型名单只代表当时版本，不能直接作为今天的配置指南。</p>
+<p><strong>不能只沿着“新增”看历史：</strong>{{v0.25.0}} 加入的 Google Gemini CLI 与 Antigravity，在 {{v0.71.0}} 被移除内置支持。{{v0.74.0}} 又将包引用迁到 <code>@earendil-works/*</code>。复制旧示例前，必须核对后续移除和迁移记录。</p>
+<p>{{v0.28.0}} 将凭证统一存到 <code>auth.json</code>。{{v0.50.0}} 支持扩展注册自定义 provider；{{v0.55.2}} 允许运行时注册和撤销。{{v0.52.12}} 暴露 SSE／WebSocket／auto 传输选择，{{v0.71.1}} 加入保持会话连接的 <code>websocket-cached</code>。{{v0.72.0}} 用模型级 <code>thinkingLevelMap</code> 表达真正支持的推理档位，避免统一菜单承诺模型没有的能力。</p>
+<p>{{v0.80.0}} 将旧全局模型 API 移到 <code>pi-ai/compat</code>，根入口转向 <code>createModels()</code> 与显式 provider 工厂；刚在 {{v0.79.8}} 提供的 <code>/base</code> 入口随之移除。扩展加载器当时仍有兼容别名，但单独类型检查和新 SDK 集成不能假设旧根入口不变。</p>
+<p><strong>{{v0.80.8}} 是第二个架构转折：</strong>ModelRuntime 成为异步模型／认证入口，替换 SDK 的 authStorage 和 modelRegistry 配置；它组合内置 provider、models.json 与扩展覆盖层，负责最终认证、请求头和流式调用装配。动态目录可保存到 models-store.json，扩展可实现 refreshModels，并可通过 <code>pi update --models</code> 单独刷新。模型选择器先显示已有快照，再后台更新。</p>
+<p><strong>例子：</strong>同一服务既能用 API key，也可能通过订阅 OAuth 或企业网关访问。仅有“模型 ID → URL”映射不够，还要处理令牌刷新、账号专属端点和动态可用模型。ModelRuntime 将这些请求前置工作集中在一个入口。</p>
+<p>{{v0.81.0}} 增加内置 llama.cpp router 接入，提供连接设置、Hugging Face 搜索下载、加载、卸载和进度；同版允许注册完整 pi-ai provider。{{v0.74.1}} 已加入图像生成 API 与 OpenRouter 图像生成支持，这是模型库能力扩展，不应等同于所有 CLI 模型都能生成图片。对应阅读：<a href="models.html">第五章统一接口与差异</a>。</p>
+</section>
+
+<section class="prose-section" aria-labelledby="trust"><h2 id="trust">10.8 安装、更新和项目信任变成产品边界</h2>
+<p>{{v0.55.1}} 加入 <code>--offline</code>／<code>PI_OFFLINE</code>，禁用启动网络操作并限制等待时间；它不意味着一个依赖远端 API 的模型可以离线推理。{{v0.60.0}} 停止在启动时检查或更新已安装的未固定版本包，包更新改由显式命令触发。</p>
+<p>{{v0.67.0}} 及 {{v0.67.1}} 记录了交互模式的安装／版本采用率 ping，并提供设置和环境变量关闭方式；{{v0.79.2}} 又加入实验性首次设置中的可选 analytics。它们是不同机制，不能混称为始终关闭的统一遥测。本读本本身仍是无遥测的离线页面。</p>
+<p>{{v0.75.0}} 将 Node.js 最低版本提高到 22.19.0；{{v0.75.4}} 为发布的 CLI 携带 npm-shrinkwrap 锁定传递依赖，并让自更新重新安装时禁用生命周期脚本。{{v0.79.4}} 为二进制 release 资产加入 SHA256SUMS；{{v0.81.1}} 增加确定性、带校验和的源码归档及重建说明。</p>
+<p><strong>{{v0.79.0}} 加入项目信任：</strong>项目本地设置、说明文件、资源和包加载前先获得信任决策；全局与显式 CLI 扩展可处理 project_trust，非交互模式有 approve 控制。{{v0.79.1}} 补充默认信任策略和 <code>ctx.isProjectTrusted()</code>。</p>
+<p><strong>具体例子：</strong>进入刚克隆的仓库并不自动授权执行仓库指定的扩展。信任门控制“是否加载本地输入”；加载后的工具是否有 OS 隔离，则属于另一层执行机制。</p>
+<p>{{v0.70.3}} 曾让 pi update 同时覆盖 Pi 本体；{{v0.79.7}} 调整为裸命令只更新 Pi，<code>--all</code> 才同时更新扩展。{{v0.84.3}} 为实验性安装器管理的安装增加暂存、校验和原子激活。<strong>启示：</strong>更新命令本身也是会变化的用户契约，不能仅凭命令名称推断副作用。</p>
+</section>
+
+<section class="prose-section" aria-labelledby="interfaces"><h2 id="interfaces">10.9 终端、宿主接口与持久执行的成熟度不同</h2>
+<p>{{v0.51.0}} 补充 RPC 扩展 UI 协议及示例客户端，让无交互终端的宿主也能承接扩展对话框。{{v0.57.0}} 明确 RPC 使用严格 LF 分隔的 JSONL，避免通用逐行读取器把 JSON 内容里的 Unicode 分隔符误当消息边界。{{v0.80.3}} 增加 get_entries、get_tree 与专用 rpc-entry；{{v0.82.0}} 增加带请求 ID 的 bash 流式输出事件；{{v0.84.4}} 增加 clear_queue 和 UI 等待事件。</p>
+<p><strong>{{v0.84.0}} 的用户可见转折是全屏 TUI：</strong>以实验模式交付，支持运行时切换、固定编辑区和独立滚动的 transcript，并增加 Mermaid／LaTeX 的终端友好呈现。{{v0.84.2}} 加入全文 transcript 搜索；{{v0.84.3}} 增加 Windows 可选 powershell 工具。这些改变终端使用体验，但不改变模型工具循环的基本角色划分。</p>
+<p>同一个 {{v0.84.0}} 还公布实验性的 PiClient、CBOR 协议、Unix-socket 传输和 RemoteSession 控制器，以及 v4 JSONL 会话仓库、延迟 provider 请求契约和 AgentHarness v2 脚手架。记录明确说明：未完成的 harness 操作路径会抛出 <code>HarnessNotImplemented</code>。</p>
+<p><strong>启示：</strong>“可以编译”“库导出存在”“实验客户端可用”和“默认 CLI 已采用完整持久执行”是四个不同判断。发版记录只能支撑它明确宣布的状态。本章不将它们合并成“Pi 已全面切换到分布式持久 Agent”。对应阅读：<a href="infrastructure.html">第八章基础设施</a>。</p>
+</section>
+
+<section class="prose-section" aria-labelledby="context-evolution"><h2 id="context-evolution">10.10 最新主线：缓存、历史与请求上下文分离</h2>
+<p>{{v0.80.7}} 引入缓存友好的动态工具加载：工具结果激活新工具时，支持的 provider 在相应位置引入定义，保留此前可缓存前缀。{{v0.80.9}} 和 {{v0.86.0}} 继续增加 Kimi、Fireworks 的原生支持。它依赖模型／协议能力，不能假设所有 provider 完全等价。</p>
+<p>{{v0.82.0}} 为工具加入 constrained sampling：用严格 JSON Schema 或支持的语法限制模型生成参数。{{v0.84.2}} 将内置工具的严格 schema 采样放在实验开关下；{{v0.86.0}} 改为内置 read、bash、powershell、edit、write 默认 strict-prefer。prefer 仍允许按 provider 能力回退；约束生成也不替代执行前验证和权限判断。</p>
+<p><strong>{{v0.86.0}} 把对话中途的系统提示和工具变化写入 transcript：</strong>恢复或导航分支后，这些变化仍可重建，并在支持的模型上保留缓存前缀。自定义 provider 的输入改为 TranscriptContext，系统提示与工具声明从 messages 中提取。同版加入按模型配置压缩预算，以及长工具执行期间和可选空闲期间的成本感知缓存预热。</p>
+<p><strong>例子：</strong>旧请求前缀是 A，工具执行后启用工具 B。若每次重写最前面的完整工具列表，缓存前缀可能失效；记录工具可用性的演进能更准确表达“B 从哪一步开始存在”。这是协议能力与历史结构共同影响成本的实例。</p>
+<p><strong>{{v0.87.0}} 进一步让 SessionManager 成为 AgentSession 请求上下文的权威来源：</strong>直接覆盖 <code>session.agent.state.messages</code> 不再替换后续请求历史。新增 <code>ContextEditEntry</code>，通过追加记录省略或替换某条消息的模型视图，而不改写原始历史、界面历史或用量。</p>
+<pre><code>原始历史：用户提问 → 读取文件得到大段文本 → 模型分析
+追加编辑：省略那条读取结果
+后续模型上下文：用户提问 → 模型分析
+历史与审计视图：原始读取结果和编辑记录仍然存在</code></pre>
+<p>同版增加可返回条目和 continue 决策的 <code>turn_end</code>／<code>agent_before_settle</code> 边界；用 <code>finishTurn</code> 替换 shouldStopAfterTurn。finishTurn 在 turn_end 前运行，决策之后应用，也会收到错误和取消响应。<code>context</code> 处理器不再接收系统消息，需要全量转换时使用其后的 <code>context_with_system</code>。</p>
+<p>{{v0.87.1}} 主要新增 Claude Opus 5.5、GPT-6 Sol／Luna 的 provider 支持和默认模型更新，并修复若干兼容问题。它是本次最新记录，但不是新的架构阶段。<strong>启示：</strong>理解当前接口时，v0.86.0 和 v0.87.0 比最新补丁号更关键。</p>
+</section>
+
+<section class="prose-section" aria-labelledby="migration"><h2 id="migration">10.11 阅读旧资料时，先查这张迁移表</h2>
+<p>以下是容易使旧示例失效的主要变化，不是完整迁移指南。具体签名以对应版本原文及目标版本文档为准。</p>
+<table><thead><tr><th scope="col">旧概念／写法</th><th scope="col">演进后的边界</th><th scope="col">证据</th></tr></thead><tbody>
+<tr><td>线性历史、条目数组下标</td><td>树形条目 ID、活动分支与摘要</td><td>{{v0.31.0}}</td></tr>
+<tr><td>queueMessage</td><td>steer 与 followUp 分别表达投递时机</td><td>{{v0.32.0}}</td></tr>
+<tr><td>hooks + custom tools</td><td>统一 extensions；文本命令为 prompt templates</td><td>{{v0.35.0}}</td></tr>
+<tr><td>手工散落资源路径</td><td>ResourceLoader 与 packages 配置管理资源</td><td>{{v0.50.0}}</td></tr>
+<tr><td>AgentSession 自行替换会话</td><td>由 AgentSessionRuntime 重建目录绑定服务</td><td>{{v0.65.0}}</td></tr>
+<tr><td>SDK 传入内置工具实例</td><td>内置工具名称白名单；自定义能力另行配置</td><td>{{v0.68.0}}</td></tr>
+<tr><td>Google Gemini CLI／Antigravity 内置 provider</td><td>已移除，必须选择仍支持的接入方式</td><td>{{v0.71.0}}</td></tr>
+<tr><td>@mariozechner 包引用</td><td>@earendil-works 包作用域</td><td>{{v0.74.0}}</td></tr>
+<tr><td>pi-ai 根入口的旧全局 API</td><td>compat 入口或 Models 工厂；/base 移除</td><td>{{v0.80.0}}</td></tr>
+<tr><td>SDK 的 authStorage + modelRegistry</td><td>异步 ModelRuntime 负责认证和模型请求装配</td><td>{{v0.80.8}}</td></tr>
+<tr><td>provider 单独读取 systemPrompt／tools</td><td>从 TranscriptContext.messages 提取规范化状态</td><td>{{v0.86.0}}</td></tr>
+<tr><td>覆盖 agent.state.messages；shouldStopAfterTurn</td><td>SessionManager 上下文编辑；finishTurn 决策</td><td>{{v0.87.0}}</td></tr>
+</tbody></table>
+<p>最值得顺读的版本是 <strong>0.26 → 0.31 → 0.32 → 0.35 → 0.50 → 0.58 → 0.65 → 0.79 → 0.80.8 → 0.84 → 0.86 → 0.87</strong>。这条路径覆盖可嵌入、可分支、可干预、可扩展、可分发、并行执行、生命周期、信任、模型运行时和上下文契约。</p>
+</section>
+
+<section class="prose-section self-check" aria-labelledby="self-check"><h2 id="self-check">本章自测</h2>
+<ol class="question-list"><li>为什么 /tree 和 AgentSessionRuntime 不是同一个层面的能力？</li><li>工具并行为什么还要保留预检和结果的顺序？</li><li>如何判断一次 release 的“新增”是否已成为默认 CLI 能力？</li><li>为什么上下文编辑不应直接覆盖原始历史？</li></ol>
+<details class="reference-answer"><summary>查看参考答案</summary><ol><li>/tree 改变历史路径；runtime 更换会话实例并重建 cwd 相关服务，防止工具与配置指向旧项目。</li><li>并行改善执行等待时间；预检顺序使拦截决策可预测，结果顺序维持模型消息结构。并行不自动消除共享文件等副作用冲突。</li><li>核对它是内置功能、可选功能、库 API、示例还是实验脚手架，再查后续改变和移除记录。v0.84.0 的未完成 harness 是明确反例。</li><li>原始历史记录发生过的事实；请求上下文是面向模型的视图。追加编辑既能减小输入或修正后续请求，又保留回放和审计依据。</li></ol></details>
+</section>

@@ -10,6 +10,7 @@ import subprocess
 from datetime import date
 
 from content import CHAPTERS, CHAPTER_CHECKS, CHAPTER_GUIDES, DIAGRAMS, GLOSSARY
+from generate_releases import generate as generate_releases
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -135,3 +136,4 @@ def generate():
 
 if __name__ == "__main__":
     generate()
+    generate_releases()

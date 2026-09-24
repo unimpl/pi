@@ -1,5 +1,18 @@
 # 验证记录
 
+## 2026-09-24：第十章与全量发版档案
+
+- GitHub Releases API 分页抓取 3 页（100、100、63），共 263 条已发布记录，无重复 ID／tag，无草稿，预发布标记为 0；覆盖 2025-12-02 的 v0.12.0 至 2026-09-22 的 v0.87.1。
+- `releases/releases.json` 保存完整原文与发布时间等元数据；`releases/manifest.json` 保存抓取时间、命令、页数、记录数、文件及逐条正文 SHA-256。原文中的空内容、维护版本和历史链接均保留。
+- 第十章按八个阶段、十一节正文提炼重大功能变化，附迁移表、自测题及与前九章的交叉引用；明确区分正式能力、实验方向、示例和后续移除项。
+- `python3 verify.py` 通过：46 个完整 HTML 页面、19,210 个本地链接与锚点、9 张原有 Mermaid 图、30 份原有源码哈希、263 条发版原文与哈希、392 个搜索目标。
+- 独立目录中从带行号 HTML 快照还原源码并校验原始哈希；源码基线 `manifest.json` 和全部 `sources/` 内容保持不变。在线引用仅允许 GitHub 发版页链接，不允许新增远程脚本、样式或图片依赖。
+- 重复执行 `generate_releases.py` 后，所有完整 HTML 页面和搜索索引逐字节相同；`node --check assets/search-index.js`、`git diff --check` 通过。
+- 内置浏览器桌面预览通过：章节排版正常，1280px 视口无页面横向溢出；搜索“上下文编辑”和 `ContextEditEntry` 可找到新章节，后者也找到 v0.87.0 原文；版本锚点与原文折叠展开正常。本次未重新进行移动端实测。
+- 源码仓库 `npm run check` 再次执行：Biome 及固定依赖、运行依赖、TS 导入、入口图、shrinkwrap、install-lock 检查通过，`tsgo --noEmit` 因既有的 `packages/ai/src/providers/data/` 缺失导致 unknown／never 模型类型错误而失败；browser-smoke 未执行。本次没有修改源码仓库、依赖或锁文件，也未提交 Git。
+
+以下为前九章交付时的历史验证记录。
+
 验证日期：2026-09-23。源码基线见 `manifest.json`。
 
 ## 已通过
