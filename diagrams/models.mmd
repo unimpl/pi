@@ -1,7 +1,13 @@
 flowchart TD
-A[AgentMessage] --> B[transformContext]
-B --> C[convertToLlm]
-C --> D[normalizeContext]
-D --> E[streamFn]
-E --> F[API 适配]
-F --> G[统一响应事件]
+U[Harness 的一次 turn] --> M[Message：发生了什么]
+MODEL[Model：调用谁、能力与预算] --> CALL[StreamFn：怎样发起一次调用]
+M --> APP{存在应用自定义消息？}
+APP -->|是| CONVERT[convertToLlm：变成模型消息]
+APP -->|否| CTX[Context]
+CONVERT --> CTX
+CTX --> N[normalizeContext：形成有序 TranscriptContext]
+N --> CALL
+CALL --> ADAPTER[API adapter：转换供应商线路协议]
+ADAPTER --> EVENTS[事件流：正在发生什么]
+EVENTS --> FINAL[AssistantMessage：最终发生了什么、为何停止]
+FINAL --> U

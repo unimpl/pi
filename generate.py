@@ -4,6 +4,7 @@
 import hashlib
 import html
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -13,7 +14,9 @@ from content import CHAPTERS, CHAPTER_CHECKS, CHAPTER_GUIDES, DIAGRAMS, GLOSSARY
 from generate_releases import generate as generate_releases
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+ROOT = Path(os.environ.get("PI_SOURCE_ROOT", HERE.parent)).expanduser().resolve()
+if not (ROOT / "packages/ai/src/types.ts").exists():
+    raise SystemExit("Set PI_SOURCE_ROOT to the local Pi source repository before generating the study site.")
 ESC = html.escape
 COMMIT = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
 STATUS = subprocess.check_output(["git", "status", "--short", "--", ".", ":(exclude)study"], cwd=ROOT, text=True).strip()
@@ -37,7 +40,10 @@ def evidence(path, needle, count, reason):
         raise ValueError(f"Evidence anchor must match once: {path}: {needle!r} ({len(matches)})")
     start = matches[0]
     SOURCES[path] = {"sha256": hashlib.sha256(source.encode()).hexdigest(), "lines": len(lines)}
-    excerpt = "\n".join(f"{i + 1:4}  {lines[i]}" for i in range(start, min(start + count, len(lines))))
+    excerpt = "\n".join(
+        f"{i + 1:4}" + (f"  {lines[i].rstrip()}" if lines[i].rstrip() else "")
+        for i in range(start, min(start + count, len(lines)))
+    )
     return f'''<details class="evidence"><summary>{ESC(reason)}</summary><p class="source-path">{ESC(path)} · L{start + 1}</p><pre><code>{ESC(excerpt)}</code></pre><a href="sources/{source_name(path)}#L{start + 1}">查看本地源码快照与行号</a></details>'''
 
 

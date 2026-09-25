@@ -31,14 +31,14 @@
 
 ## 更新读本
 
-此仓库保存预生成网站。重新生成源码证据时，需要把本目录作为 Pi 源码仓库中的 `study/`，因为生成器会读取相邻的 `packages/`。先重新核对正文中的行为和推断，再运行：
+此仓库保存预生成网站。重新生成源码证据时，用 `PI_SOURCE_ROOT` 指向本地 Pi 源码仓库。先重新核对正文中的行为和推断，再运行：
 
 ```sh
-npm ci --prefix study --ignore-scripts
-python3 study/generate.py
-node study/render-diagrams.mjs
-python3 study/verify.py
-node --check study/assets/book.js
+npm ci --ignore-scripts
+PI_SOURCE_ROOT=/path/to/pi-source python3 generate.py
+node render-diagrams.mjs
+python3 verify.py
+node --check assets/book.js
 ```
 
 Python 需要 3.9+；图表工具只用于制作，精确锁定在此目录的独立 package-lock 中，不修改仓库工作区依赖。`beautiful-mermaid` 根据 Mermaid 语法渲染 SVG，页面运行时不加载渲染器。

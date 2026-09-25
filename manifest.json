@@ -1,6 +1,6 @@
 {
   "commit": "36b60d2e8985899743c4cf5bd5f8929832a3f05d",
-  "date": "2026-09-23",
+  "date": "2026-09-25",
   "workspaceDiffOutsideStudy": "",
   "sources": {
     "packages/coding-agent/src/core/sdk.ts": {
@@ -66,10 +66,6 @@
     "packages/ai/src/types.ts": {
       "sha256": "3b777458915620ce42677546e79467bcf901165e6289c211bb03a48faa78a515",
       "lines": 990
-    },
-    "packages/ai/src/providers/openai.ts": {
-      "sha256": "1904f9511221f47bbe890dc007571add9ac16ab28cd48c4090b58f13950cbfd0",
-      "lines": 15
     },
     "packages/ai/src/api/anthropic-messages.ts": {
       "sha256": "d1316907eaeac7d547b75e3c5ec1eb92c7b6af515b74917d068f3e262cde6209",
