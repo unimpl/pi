@@ -3,18 +3,18 @@
   "source": "https://github.com/earendil-works/pi/releases",
   "api": "https://api.github.com/repos/earendil-works/pi/releases?per_page=100",
   "command": "gh api --paginate --slurp 'repos/earendil-works/pi/releases?per_page=100'",
-  "fetched_at": "2026-09-24T15:24:49.886619+00:00",
+  "fetched_at": "2026-10-03T09:50:05.873576+00:00",
   "page_count": 3,
   "page_sizes": [
     100,
     100,
-    63
+    67
   ],
-  "count": 263,
+  "count": 267,
   "prerelease_count": 0,
   "first_published": "2025-12-02T11:24:16Z",
-  "last_published": "2026-09-22T19:43:43Z",
-  "sha256": "68724d8dc5f326ffe16c141832b474b49a08814036db2092feafbb6ccd049332",
+  "last_published": "2026-10-01T19:20:55Z",
+  "sha256": "23a4de25d9db2c603250c45b7749835871545a27c2d6a731e7fd56c1b3d59a95",
   "scope": "All published release records visible to this API request, not all git tags or per-package changelogs. Release bodies are preserved verbatim, including empty and maintenance-only bodies. Assets and user profile metadata are omitted.",
   "body_sha256": {
     "v0.12.0": "603bf699d90af6f99b6dc0abe134e5c67ea542494c4de23e56af6b7e5881a982",
@@ -279,6 +279,10 @@
     "v0.86.0": "1dbc65e460c5556a52bd6ca590eb4ed4920400f430648360d4db30b244cc767a",
     "v0.86.1": "889172bc930e8a5bea63596d5780d5cefd426bd71e0f17de95ebf6b90098ef83",
     "v0.87.0": "f74601697f5170247b87ce4fd1eec638c40d1f9c819528ec2b1951fefef1f2e4",
-    "v0.87.1": "457f7d01c8cc0eb8159b1541c07d0b2a21fb3c6abbabc6a5ef9d188130555260"
+    "v0.87.1": "457f7d01c8cc0eb8159b1541c07d0b2a21fb3c6abbabc6a5ef9d188130555260",
+    "v0.99.0": "54e6deaf8fa11ce98a387f3a29c6d66c88427d2668f2dca43d13e98805e11317",
+    "v0.99.1": "a5e4b92aa867892796858f790358a77eaa193cc120ef70efcf5090296da4cb19",
+    "v0.99.2": "250aca304e48f190600ad3bedf521b3edc5c9b4047c520b4db5042b2329b16be",
+    "v1.0.0": "ee4255b65f7e5692ee5e3f21fbe285bba793a92532af04db5126b4ea24acb845"
   }
 }

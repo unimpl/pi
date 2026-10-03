@@ -1,7 +1,7 @@
 <div class="chapter-meta">第 10 章 / 演进</div>
 <h1>从发版记录理解功能演进</h1>
 <p class="subtitle">把新增能力、接口迁移和实验方向放回时间线上。</p>
-<p class="lead">前九章解释一份源码快照如何工作。本章换一个问题：哪些实际需求，推动 Pi 从终端助手发展出会话树、扩展系统和可组合运行时？以下事实来自 GitHub Releases；每个版本链接都指向本书保存的原文，设计启示属于分析。</p>
+<p class="lead">前九章解释一份较早的源码快照如何工作。本章追踪官方发版至 v1.0.0：哪些需求推动 Pi 从终端助手发展出会话树、扩展系统、MCP 与 codemode？每个版本链接都指向本书保存的原文，设计启示属于分析。</p>
 
 <section class="chapter-guide" aria-labelledby="design-lens">
 <div class="guide-heading"><h2 id="design-lens">本章先抓什么</h2><span>综合 · 先读主线，再查迁移</span></div>
@@ -19,7 +19,7 @@
 <p><a href="release-archive.html">查看全部发版原文与索引</a> · <a href="releases/releases.json">下载完整记录 JSON</a> · <a href="releases/manifest.json">查看抓取与哈希清单</a></p>
 </section>
 
-<section class="prose-section" aria-labelledby="timeline"><h2 id="timeline">10.2 先看八个阶段</h2>
+<section class="prose-section" aria-labelledby="timeline"><h2 id="timeline">10.2 先看九个阶段</h2>
 <table><thead><tr><th scope="col">阶段</th><th scope="col">关键版本</th><th scope="col">能力边界如何变化</th></tr></thead><tbody>
 <tr><td>可安装、可长聊</td><td>{{v0.12.0}}<br>{{v0.12.7}}</td><td>独立二进制降低安装门槛；上下文压缩支撑长会话。</td></tr>
 <tr><td>可复用、可嵌入</td><td>{{v0.19.0}}<br>{{v0.26.0}}</td><td>技能按需加载，自定义工具和 SDK 让能力离开固定 CLI。</td></tr>
@@ -29,6 +29,7 @@
 <tr><td>建立信任与模型运行时</td><td>{{v0.79.0}}<br>{{v0.80.8}}</td><td>项目资源加载先过信任判断；凭证、动态目录和请求装配统一管理。</td></tr>
 <tr><td>本地模型、全屏与远程探索</td><td>{{v0.81.0}}<br>{{v0.84.0}}</td><td>加入本地模型管理；终端交互增强；远程与持久执行仍需区分成熟度。</td></tr>
 <tr><td>历史与请求上下文进一步分离</td><td>{{v0.86.0}}<br>{{v0.87.0}}</td><td>指令与工具变化进入 transcript；上下文编辑追加记录，生命周期边界可驱动后续请求。</td></tr>
+<tr><td>工具编排与 1.0 交互</td><td>{{v0.99.0}}<br>{{v1.0.0}}</td><td>codemode 与 MCP 引入工具发现、嵌套调用和受控执行；全屏 TUI 成为默认，图像生成进入脚本。</td></tr>
 </tbody></table>
 </section>
 
@@ -75,7 +76,7 @@
 <p>{{v0.80.0}} 将旧全局模型 API 移到 <code>pi-ai/compat</code>，根入口转向 <code>createModels()</code> 与显式 provider 工厂；刚在 {{v0.79.8}} 提供的 <code>/base</code> 入口随之移除。扩展加载器当时仍有兼容别名，但单独类型检查和新 SDK 集成不能假设旧根入口不变。</p>
 <p><strong>{{v0.80.8}} 是第二个架构转折：</strong>ModelRuntime 成为异步模型／认证入口，替换 SDK 的 authStorage 和 modelRegistry 配置；它组合内置 provider、models.json 与扩展覆盖层，负责最终认证、请求头和流式调用装配。动态目录可保存到 models-store.json，扩展可实现 refreshModels，并可通过 <code>pi update --models</code> 单独刷新。模型选择器先显示已有快照，再后台更新。</p>
 <p><strong>例子：</strong>同一服务既能用 API key，也可能通过订阅 OAuth 或企业网关访问。仅有“模型 ID → URL”映射不够，还要处理令牌刷新、账号专属端点和动态可用模型。ModelRuntime 将这些请求前置工作集中在一个入口。</p>
-<p>{{v0.81.0}} 增加内置 llama.cpp router 接入，提供连接设置、Hugging Face 搜索下载、加载、卸载和进度；同版允许注册完整 pi-ai provider。{{v0.74.1}} 已加入图像生成 API 与 OpenRouter 图像生成支持，这是模型库能力扩展，不应等同于所有 CLI 模型都能生成图片。对应阅读：<a href="models.html">第五章统一接口与差异</a>。</p>
+<p>{{v0.81.0}} 增加内置 llama.cpp router 接入，提供连接设置、Hugging Face 搜索下载、加载、卸载和进度；同版允许注册完整 pi-ai provider。{{v0.74.1}} 已加入图像生成 API 与 OpenRouter 图像生成支持；{{v0.99.0}} 才把图像和分类模型接入 coding-agent 的 ModelRuntime，{{v1.0.0}} 再让 codemode 脚本调用图像生成。对应阅读：<a href="models.html">第五章统一接口与差异</a>。</p>
 </section>
 
 <section class="prose-section" aria-labelledby="trust"><h2 id="trust">10.8 安装、更新和项目信任变成产品边界</h2>
@@ -89,12 +90,12 @@
 
 <section class="prose-section" aria-labelledby="interfaces"><h2 id="interfaces">10.9 终端、宿主接口与持久执行的成熟度不同</h2>
 <p>{{v0.51.0}} 补充 RPC 扩展 UI 协议及示例客户端，让无交互终端的宿主也能承接扩展对话框。{{v0.57.0}} 明确 RPC 使用严格 LF 分隔的 JSONL，避免通用逐行读取器把 JSON 内容里的 Unicode 分隔符误当消息边界。{{v0.80.3}} 增加 get_entries、get_tree 与专用 rpc-entry；{{v0.82.0}} 增加带请求 ID 的 bash 流式输出事件；{{v0.84.4}} 增加 clear_queue 和 UI 等待事件。</p>
-<p><strong>{{v0.84.0}} 的用户可见转折是全屏 TUI：</strong>以实验模式交付，支持运行时切换、固定编辑区和独立滚动的 transcript，并增加 Mermaid／LaTeX 的终端友好呈现。{{v0.84.2}} 加入全文 transcript 搜索；{{v0.84.3}} 增加 Windows 可选 powershell 工具。这些改变终端使用体验，但不改变模型工具循环的基本角色划分。</p>
+<p><strong>{{v0.84.0}} 的用户可见转折是全屏 TUI：</strong>最初以实验模式交付，支持运行时切换、固定编辑区和独立滚动的 transcript，并增加 Mermaid／LaTeX 的终端友好呈现。{{v0.84.2}} 加入全文 transcript 搜索；{{v0.84.3}} 增加 Windows 可选 powershell 工具。到 {{v1.0.0}}，全屏成为默认；需要原生终端回滚区时可选 <code>tuiMode: "regular"</code>。</p>
 <p>同一个 {{v0.84.0}} 还公布实验性的 PiClient、CBOR 协议、Unix-socket 传输和 RemoteSession 控制器，以及 v4 JSONL 会话仓库、延迟 provider 请求契约和 AgentHarness v2 脚手架。记录明确说明：未完成的 harness 操作路径会抛出 <code>HarnessNotImplemented</code>。</p>
 <p><strong>启示：</strong>“可以编译”“库导出存在”“实验客户端可用”和“默认 CLI 已采用完整持久执行”是四个不同判断。发版记录只能支撑它明确宣布的状态。本章不将它们合并成“Pi 已全面切换到分布式持久 Agent”。对应阅读：<a href="infrastructure.html">第八章基础设施</a>。</p>
 </section>
 
-<section class="prose-section" aria-labelledby="context-evolution"><h2 id="context-evolution">10.10 最新主线：缓存、历史与请求上下文分离</h2>
+<section class="prose-section" aria-labelledby="context-evolution"><h2 id="context-evolution">10.10 缓存、历史与请求上下文分离</h2>
 <p>{{v0.80.7}} 引入缓存友好的动态工具加载：工具结果激活新工具时，支持的 provider 在相应位置引入定义，保留此前可缓存前缀。{{v0.80.9}} 和 {{v0.86.0}} 继续增加 Kimi、Fireworks 的原生支持。它依赖模型／协议能力，不能假设所有 provider 完全等价。</p>
 <p>{{v0.82.0}} 为工具加入 constrained sampling：用严格 JSON Schema 或支持的语法限制模型生成参数。{{v0.84.2}} 将内置工具的严格 schema 采样放在实验开关下；{{v0.86.0}} 改为内置 read、bash、powershell、edit、write 默认 strict-prefer。prefer 仍允许按 provider 能力回退；约束生成也不替代执行前验证和权限判断。</p>
 <p><strong>{{v0.86.0}} 把对话中途的系统提示和工具变化写入 transcript：</strong>恢复或导航分支后，这些变化仍可重建，并在支持的模型上保留缓存前缀。自定义 provider 的输入改为 TranscriptContext，系统提示与工具声明从 messages 中提取。同版加入按模型配置压缩预算，以及长工具执行期间和可选空闲期间的成本感知缓存预热。</p>
@@ -105,10 +106,28 @@
 后续模型上下文：用户提问 → 模型分析
 历史与审计视图：原始读取结果和编辑记录仍然存在</code></pre>
 <p>同版增加可返回条目和 continue 决策的 <code>turn_end</code>／<code>agent_before_settle</code> 边界；用 <code>finishTurn</code> 替换 shouldStopAfterTurn。finishTurn 在 turn_end 前运行，决策之后应用，也会收到错误和取消响应。<code>context</code> 处理器不再接收系统消息，需要全量转换时使用其后的 <code>context_with_system</code>。</p>
-<p>{{v0.87.1}} 主要新增 Claude Opus 5.5、GPT-6 Sol／Luna 的 provider 支持和默认模型更新，并修复若干兼容问题。它是本次最新记录，但不是新的架构阶段。<strong>启示：</strong>理解当前接口时，v0.86.0 和 v0.87.0 比最新补丁号更关键。</p>
+<p>{{v0.87.1}} 主要新增 Claude Opus 5.5、GPT-6 Sol／Luna 的 provider 支持和默认模型更新，并修复若干兼容问题。<strong>启示：</strong>理解上下文编辑与生命周期接口时，v0.86.0 和 v0.87.0 是关键转折。</p>
 </section>
 
-<section class="prose-section" aria-labelledby="migration"><h2 id="migration">10.11 阅读旧资料时，先查这张迁移表</h2>
+<section class="prose-section" aria-labelledby="codemode-mcp"><h2 id="codemode-mcp">10.11 v0.99：codemode、MCP 与工具暴露</h2>
+<p><strong>问题：</strong>工具越多，每次模型请求都声明全部工具，会增加提示长度；调用多个工具时，模型还需要一种可编排中间结果的方式。</p>
+<p>{{v0.99.0}} 把 <code>codemode</code>、<code>tool_search</code> 和 MCP 加入内置扩展。codemode 在 QuickJS 沙箱执行模型写的 JavaScript，脚本可调用 Pi 工具并并行组合结果；通过 <code>defaultTools</code> 或 <code>--tools</code> 启用，并受 <code>codemode.mode</code> 等配置控制。MCP 服务器可用 stdio 或可流式传输的 HTTP 接入，通过全局配置或可信项目的 <code>mcp.json</code> 管理，也可由扩展注册。它们是可配置能力，不应从“内置扩展”推断所有会话默认启用 codemode 或连接任意 MCP 服务。</p>
+<p>同版扩展工具获得 <code>exposure</code>、<code>namespace</code>、<code>annotations</code>、<code>outputSchema</code> 和结构化结果；<code>ctx.executeTool()</code> 能从一个工具中发起嵌套调用，并记录父调用 ID。<strong>例子：</strong>模型请求一个 codemode 脚本，脚本并行读取两处数据，只把合并后的要点交回模型。工具的执行仍由 Pi 承接，脚本沙箱不等于工具副作用也被隔离。</p>
+<p>{{v0.99.2}} 收紧了 MCP 默认暴露：codemode 可见的 MCP 工具不再逐个塞进工具描述，脚本用 <code>searchTools()</code> 搜索、<code>describeNamespace()</code> 阅读命名空间说明。没有 direct 工具的服务器在后台连接，首次提问不等待它们；真正搜索或调用时再等待。服务器摘要进入系统提示，并在变化后追加到会话。这样减少了连接波动引起的提示前缀变化，也避免尚未需要的服务器阻塞首轮请求。</p>
+<p>{{v0.99.2}} 还增加 <code>oauth.clientName</code> 和用 provider 登录令牌认证 HTTP MCP 的方式；后者只允许全局配置或扩展注册，并要求非本机地址使用 HTTPS。{{v1.0.0}} 把 Radius 登录与其 MCP 配置连成一个入口，同时将 MCP OAuth 凭证按服务器名称和 URL 区分，验证授权响应的 <code>iss</code>，并在服务器要求更多权限时保留已有授权范围。</p>
+<p><strong>启示：</strong>工具的“可安装”“可发现”“对模型直接声明”“脚本可调用”和“允许执行”是不同决策。读第六章的旧工具边界后，再用这些版本理解较新的工具分层。</p>
+</section>
+
+<section class="prose-section" aria-labelledby="one-zero"><h2 id="one-zero">10.12 v1.0：模型路由、脚本能力与默认体验</h2>
+<p>{{v0.99.0}} 为 coding-agent 的 ModelRuntime 增加图像生成、分类和按类型查询模型；codemode 可调用 Jev 分类器，llama.cpp 聊天模型也可作为分类器。实验性 virtual models 可由扩展注册，并在每次请求选择实际模型及思考等级；界面和会话统计区分路由后的物理模型。它适合按任务选择模型，但不等于 SDK 默认自动路由。</p>
+<p>认证也发生转向：{{v0.99.0}} 在 OpenAI provider 增加“Sign in with ChatGPT”，将原有 OpenAI Codex provider 标为 legacy；{{v0.99.1}} 加入 GPT-6.1 Sol 并把它设为 OpenAI Codex 的默认模型；{{v0.99.2}} 加入 Anthropic workload identity federation。具体模型可用性与账户权限仍需以登录后的目录为准。</p>
+<p><strong>{{v1.0.0}} 的默认体验有两个明显变化：</strong>终端默认进入全屏，普通滚动模式需显式选择；codemode 的工具说明和系统提示缩短。官方发版说明给出一项 GPT-5.6 配置下的示例：提示长度约从 5,300 降至 3,300 tokens。这是该配置的发布数据，不能外推为所有模型和工具组合都节省固定比例。</p>
+<p>同版 codemode 增加 <code>models.generateImages()</code>，使用会话凭证调用图像模型，并将生成图像作为结果返回，费用计入会话；扩展也可通过 modelRegistry 调用。错误提示会给出拼写接近的工具／模型成员和期望参数。脚本检测可用工具时，旧写法 <code>typeof tools.name</code> 应改为 <code>"name" in tools</code>。</p>
+<p>Pi 的终端配色在 {{v0.99.0}} 改为默认跟随终端调色板，主题文件可用 OKLCH／OKHSL 等颜色；{{v1.0.0}} 增加仅保留版本与快捷键提示的 <code>quietStartup: "header"</code>。这些提升显示一致性与启动信息控制，不改变 Agent 的会话语义。</p>
+<p><strong>安全与可恢复性：</strong>{{v1.0.0}} 修复 MCP OAuth 的授权服务器混淆风险，并让同 URL 的服务器可分别使用账户；{{v0.99.0}} 修复“首条用户消息后、首条助手回复前退出”时新会话丢失。一个保护登录来源，一个保护运行中的历史事实。</p>
+</section>
+
+<section class="prose-section" aria-labelledby="migration"><h2 id="migration">10.13 阅读旧资料时，先查这张迁移表</h2>
 <p>以下是容易使旧示例失效的主要变化，不是完整迁移指南。具体签名以对应版本原文及目标版本文档为准。</p>
 <table><thead><tr><th scope="col">旧概念／写法</th><th scope="col">演进后的边界</th><th scope="col">证据</th></tr></thead><tbody>
 <tr><td>线性历史、条目数组下标</td><td>树形条目 ID、活动分支与摘要</td><td>{{v0.31.0}}</td></tr>
@@ -123,11 +142,15 @@
 <tr><td>SDK 的 authStorage + modelRegistry</td><td>异步 ModelRuntime 负责认证和模型请求装配</td><td>{{v0.80.8}}</td></tr>
 <tr><td>provider 单独读取 systemPrompt／tools</td><td>从 TranscriptContext.messages 提取规范化状态</td><td>{{v0.86.0}}</td></tr>
 <tr><td>覆盖 agent.state.messages；shouldStopAfterTurn</td><td>SessionManager 上下文编辑；finishTurn 决策</td><td>{{v0.87.0}}</td></tr>
+<tr><td>把 MCP 工具名单放进 codemode 描述</td><td>按 exposure 决定 direct、codemode 或 deferred；默认 MCP 工具由脚本搜索</td><td>{{v0.99.0}}、{{v0.99.2}}</td></tr>
+<tr><td>OpenAI Codex provider 作为订阅登录首选</td><td>OpenAI provider 的“Sign in with ChatGPT”；旧 provider 标为 legacy</td><td>{{v0.99.0}}</td></tr>
+<tr><td>普通终端滚动区是默认显示模式</td><td>v1.0 默认全屏；需要旧模式时设置 tuiMode 为 regular</td><td>{{v1.0.0}}</td></tr>
+<tr><td>codemode 用 typeof tools.name 探测工具</td><td>用 "name" in tools 判断是否存在</td><td>{{v1.0.0}}</td></tr>
 </tbody></table>
-<p>最值得顺读的版本是 <strong>0.26 → 0.31 → 0.32 → 0.35 → 0.50 → 0.58 → 0.65 → 0.79 → 0.80.8 → 0.84 → 0.86 → 0.87</strong>。这条路径覆盖可嵌入、可分支、可干预、可扩展、可分发、并行执行、生命周期、信任、模型运行时和上下文契约。</p>
+<p>最值得顺读的版本是 <strong>0.26 → 0.31 → 0.32 → 0.35 → 0.50 → 0.58 → 0.65 → 0.79 → 0.80.8 → 0.84 → 0.86 → 0.87 → 0.99 → 1.0</strong>。这条路径覆盖可嵌入、会话分支、并行执行、信任、模型运行时、上下文、工具编排和默认交互的主要转折。</p>
 </section>
 
 <section class="prose-section self-check" aria-labelledby="self-check"><h2 id="self-check">本章自测</h2>
-<ol class="question-list"><li>为什么 /tree 和 AgentSessionRuntime 不是同一个层面的能力？</li><li>工具并行为什么还要保留预检和结果的顺序？</li><li>如何判断一次 release 的“新增”是否已成为默认 CLI 能力？</li><li>为什么上下文编辑不应直接覆盖原始历史？</li></ol>
-<details class="reference-answer"><summary>查看参考答案</summary><ol><li>/tree 改变历史路径；runtime 更换会话实例并重建 cwd 相关服务，防止工具与配置指向旧项目。</li><li>并行改善执行等待时间；预检顺序使拦截决策可预测，结果顺序维持模型消息结构。并行不自动消除共享文件等副作用冲突。</li><li>核对它是内置功能、可选功能、库 API、示例还是实验脚手架，再查后续改变和移除记录。v0.84.0 的未完成 harness 是明确反例。</li><li>原始历史记录发生过的事实；请求上下文是面向模型的视图。追加编辑既能减小输入或修正后续请求，又保留回放和审计依据。</li></ol></details>
+<ol class="question-list"><li>为什么 /tree 和 AgentSessionRuntime 不是同一个层面的能力？</li><li>工具并行为什么还要保留预检和结果的顺序？</li><li>如何判断一次 release 的“新增”是否已成为默认 CLI 能力？</li><li>为什么上下文编辑不应直接覆盖原始历史？</li><li>v0.99 以后，MCP 工具为什么不必全部直接声明给模型？</li></ol>
+<details class="reference-answer"><summary>查看参考答案</summary><ol><li>/tree 改变历史路径；runtime 更换会话实例并重建 cwd 相关服务，防止工具与配置指向旧项目。</li><li>并行改善执行等待时间；预检顺序使拦截决策可预测，结果顺序维持模型消息结构。并行不自动消除共享文件等副作用冲突。</li><li>核对它是内置功能、可选功能、库 API、示例还是实验脚手架，再查后续改变和移除记录。v0.84.0 的未完成 harness 是明确反例；v1.0 的全屏则明确成为默认。</li><li>原始历史记录发生过的事实；请求上下文是面向模型的视图。追加编辑既能减小输入或修正后续请求，又保留回放和审计依据。</li><li>工具发现可以推迟到需要时，通过 searchTools／describeNamespace 获取；direct 工具仍可立即声明。这样减少初始提示长度和等待，并保持工具调用由运行时控制。</li></ol></details>
 </section>

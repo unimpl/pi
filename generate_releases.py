@@ -13,6 +13,7 @@ NAV = f'<a href="releases.html"><span>10</span>{TITLE}</a>'
 def generate():
     releases = json.loads((HERE / "releases/releases.json").read_text())
     manifest = json.loads((HERE / "releases/manifest.json").read_text())
+    code_baseline = json.loads((HERE / "manifest.json").read_text())
     by_tag = {release["tag_name"]: release for release in releases}
     template = (HERE / "index.html").read_text()
     template = template.replace(NAV, "")
@@ -59,6 +60,9 @@ def generate():
         if path.name == "index.html":
             page = page.replace("九章，一条阅读路径", "十章，一条阅读路径")
             page = page.replace("最后一章把代码归纳成设计判断。", "第九章把代码归纳成设计判断；第十章从发版记录回看功能演进。")
+            if 'id="release-update"' not in page:
+                note = f'<p id="release-update">前九章的源码快照生成于 {code_baseline["date"]}，基线提交为 {code_baseline["commit"][:12]}。官方发版已至 {releases[-1]["tag_name"]}；新增的 codemode、MCP 与默认全屏等变化见<a href="releases.html#codemode-mcp">第十章</a>。</p>'
+                page = page.replace('<div class="reading-key">', note + '<div class="reading-key">')
             if 'class="chapter-list-number">10</span>' not in page:
                 card = f'<a href="releases.html"><span class="chapter-list-number">10</span><div><h3>{TITLE}</h3><p>从全部发版记录中识别能力边界、迁移成本与实验方向。</p></div><span class="chapter-level">演进</span></a>'
                 page = page.replace('</div></section><section><h2 id="use">', card + '</div></section><section><h2 id="use">')
